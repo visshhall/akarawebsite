@@ -6,24 +6,48 @@
 // would 404 on refresh even though it works fine when clicked to from
 // within the site.
 //
-// This same server is also where future backend API routes (P6/P7 — auth,
-// orders, Razorpay webhooks, admin panel endpoints) should get added later,
-// as app.get("/api/...")/app.post("/api/...") routes registered BEFORE the
-// static/catch-all handlers below.
+// Backend API routes (auth, products so far — orders/Razorpay/admin next)
+// are registered under /api/... BEFORE the static/catch-all handlers below,
+// as this comment always said they should be.
 
 import express from "express";
+import cookieParser from "cookie-parser";
 import path from "path";
 import { fileURLToPath } from "url";
+import { attachCustomer } from "./server/auth.js";
+import authRoutes from "./server/routes/auth.js";
+import productRoutes from "./server/routes/products.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.use(express.json());
+app.use(cookieParser());
+app.use(attachCustomer);
+
 // Health check — useful for Railway/any platform's deploy health checks.
 app.get("/healthz", (req, res) => res.status(200).send("ok"));
 
-// --- Future backend routes go here, before the static handler below ---
-// e.g. app.use("/api/orders", ordersRouter);
+app.use("/api/auth", authRoutes);
+app.use("/api/products", productRoutes);
+
+// Any /api/... path that didn't match a route above is a genuine API 404
+// — without this, it would otherwise fall through to the SPA catch-all
+// below and silently return the HTML page with a 200 status, which would
+// make a typo'd fetch URL in the frontend fail confusingly instead of
+// clearly.
+app.use("/api", (req, res) => {
+  res.status(404).json({ error: "Not found." });
+});
+
+// Generic error handler — catches anything thrown/rejected inside a route
+// (e.g. the database being briefly unreachable) so the server returns a
+// real JSON error instead of crashing the whole process or hanging.
+app.use((err, req, res, next) => {
+  console.error("API error:", err);
+  res.status(500).json({ error: "Something went wrong. Please try again." });
+});
 
 app.use(express.static(path.join(__dirname, "dist")));
 
