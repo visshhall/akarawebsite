@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, Component } from "react";
+import { useState, useEffect, useRef, useCallback, useContext, createContext, Component } from "react";
 import {
   Menu, X, Search, Heart, User, ShoppingBag,
   ArrowUpRight, Star, Lock, RotateCcw, Minus, Plus,
@@ -100,88 +100,29 @@ const pwStrength = (pw = "") => {
 // email field sitewide.
 const validEmail = (e = "") => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 
-// Login attempt limiter — 5 attempts then exponential backoff (30s ->
-// 60s -> 120s -> ... capped at 1800s/30min). Persisted to localStorage
-// (see _load/_save) specifically so a page refresh can't reset it — an
-// earlier version was pure in-memory and trivially bypassable that way.
-// Still fundamentally a client-side speed bump, not real protection
-// (clearing browser storage resets it) — see the SECURITY NOTE right
-// below this class for what MUST happen before real launch.
-class RateLimiter {
-  constructor(key="akara_login_limiter", maxAttempts = 5, windowMs = 15 * 60 * 1000) {
-    this.key=key; this.max = maxAttempts; this.window = windowMs;
-    const stored=this._load();
-    this.attempts = stored.attempts||0; this.lockedUntil = stored.lockedUntil||0;
-  }
-  _load(){
-    try{ const raw=localStorage.getItem(this.key); return raw?JSON.parse(raw):{}; }catch{ return {}; }
-  }
-  _save(){
-    try{ localStorage.setItem(this.key,JSON.stringify({attempts:this.attempts,lockedUntil:this.lockedUntil})); }catch{ /* private browsing or storage disabled */ }
-  }
-  check() {
-    if (Date.now() < this.lockedUntil) { return { allowed: false, wait: Math.ceil((this.lockedUntil - Date.now()) / 1000) }; }
-    return { allowed: true, wait: 0 };
-  }
-  record() {
-    this.attempts++;
-    if (this.attempts >= this.max) { const b = Math.min(Math.pow(2, this.attempts - this.max) * 30, 1800); this.lockedUntil = Date.now() + b * 1000; }
-    this._save();
-  }
-  reset() { this.attempts = 0; this.lockedUntil = 0; this._save(); }
-}
-const loginLimiter = new RateLimiter();
-// SECURITY NOTE: this rate limiter (and the hardcoded demo login below) are client-side
-// only, for pre-backend demo purposes. A client-side limiter can always be bypassed by
-// clearing browser storage — it raises the bar against casual retry-spam, nothing more.
-// Both MUST be replaced with real server-side authentication + rate limiting before
-// this site handles real customer accounts. Do not ship the hardcoded credential check
-// below to a live production login.
+// NOTE: this file used to contain a client-side-only RateLimiter class and
+// a hardcoded demo login (test@example.com) here — both were the
+// pre-backend placeholder for login attempt limiting and authentication.
+// Both have been replaced by the real thing: server-side rate limiting in
+// server/auth.js (genuinely unbypassable by clearing browser storage,
+// unlike the old version) and real accounts via /api/auth — see LoginView
+// and SignupView further down, and the "AUTH PAGES" comment above them.
 
 // ============================================================================
-// PRODUCT CATALOG — single source of truth for all 31 products.
+// PRODUCTS — now fetched from the real backend (GET /api/products) instead
+// of a hardcoded array. See ProductsContext/useProducts()/the fetch effect
+// in AkaraAppRoot below. The 31-product CATALOG array and per-product
+// SEO_COPY object that used to live here were removed once the database
+// became the single source of truth — keeping both would have meant two
+// places that could silently disagree (e.g. an admin panel price edit
+// later would update the database but not this file). The database was
+// originally seeded FROM this data (see db/seed-products.json), so nothing
+// was lost — it just moved to where it can now actually be edited without
+// a code deployment.
 // ============================================================================
-// Raw data: id (also the URL slug), name, category, price (INR, GST-
-// exclusive), dims (+ weight where known), hsn (GST tax code: 3924 =
-// planters/vases, 9405 = lighting). Components never use this array
-// directly — see PRODUCTS below, which derives the real per-product object
-// (SEO copy, media gallery, category icon, stock status) from this data.
-// To add a new product: add one entry here + a matching entry in
-// SEO_COPY (same id) — routing, cart, wishlist, related products, and the
-// sitemap all pick it up automatically, no other code changes needed.
-const CATALOG = [
-  { id:"vayu-round-planter", name:"Vayu Round Planter", cat:"Planters", price:491, dims:"10cm × 10cm × 10cm · 0.29kg", hsn:"3924" },
-  { id:"sonar-round-planter-black", name:"Sonar Round Planter", cat:"Planters", price:436, dims:"9cm × 6cm × 8cm · 0.15kg", hsn:"3924" },
-  { id:"sonar-round-planter-beige", name:"Sonar Round Planter (Beige)", cat:"Planters", price:491, dims:"13cm × 13cm × 10cm · 0.16kg", hsn:"3924" },
-  { id:"axiom-sculptural-planter", name:"Axiom Sculptural Planter", cat:"Planters", price:1500, dims:"15cm × 15cm × 15cm · 0.5kg", hsn:"3924" },
-  { id:"kinetic-round-planter", name:"Kinetic Round Planter", cat:"Planters", price:411, dims:"13cm × 13cm × 10cm · 0.2kg", hsn:"3924" },
-  { id:"echo-round-planter", name:"Echo Round Planter", cat:"Planters", price:436, dims:"11.4cm × 11.4cm × 10cm · 0.2kg", hsn:"3924" },
-  { id:"eclipse-sculptural-planter", name:"Eclipse Sculptural Planter", cat:"Planters", price:411, dims:"12cm × 12cm × 10cm · 0.25kg", hsn:"3924" },
-  { id:"terra-sculptural-planter", name:"Terra Sculptural Planter", cat:"Planters", price:436, dims:"13cm × 13cm × 10cm · 0.2kg", hsn:"3924" },
-  { id:"orbita-sculptural-planter", name:"Orbita Sculptural Planter", cat:"Planters", price:491, dims:"10cm × 10cm × 10cm · 0.2kg", hsn:"3924" },
-  { id:"zenith-bonsai-planter", name:"Zenith Bonsai Planter", cat:"Planters", price:763, dims:"15cm × 10cm × 8cm · 0.25kg", hsn:"3924" },
-  { id:"vetra-oval-planter", name:"Vetra Oval Planter", cat:"Planters", price:656, dims:"10cm × 10cm × 10cm · 0.3kg", hsn:"3924" },
-  { id:"plant-container-set", name:"Plant Container Set", cat:"Planters", price:395, dims:"13cm × 13cm × 10cm · 0.2kg", hsn:"3924" },
-  { id:"orbita-stone-ring-planter", name:"Orbita Stone Ring Planter", cat:"Planters", price:258, dims:"10cm × 10cm × 10cm · 0.2kg", hsn:"3924" },
-  { id:"helion-vase-white", name:"Helion Vase (White)", cat:"Vases", price:370, dims:"10cm × 10cm × 20cm · 0.15kg", hsn:"3924" },
-  { id:"helion-vase-bronze", name:"Helion Vase (Bronze)", cat:"Vases", price:370, dims:"6cm × 6cm × 25cm · 0.15kg", hsn:"3924" },
-  { id:"helion-vase-black", name:"Helion Vase (Black)", cat:"Vases", price:300, dims:"9cm × 9cm × 10cm · 0.13kg", hsn:"3924" },
-  { id:"aira-decorative-vase", name:"Aira Decorative Vase", cat:"Vases", price:565, dims:"14.3cm × 14.3cm × 25cm · 0.25kg", hsn:"3924" },
-  { id:"vera-fluted-vase", name:"Vera Fluted Sculptural Vase", cat:"Vases", price:746, dims:"10cm × 10cm × 20cm · 0.3kg", hsn:"3924" },
-  { id:"reva-lattice-vase", name:"Reva Designer Flower Vase", cat:"Vases", price:621, dims:"10cm × 10cm × 20cm · 0.3kg", hsn:"3924" },
-  { id:"vermillion-lamp-red", name:"Vermillion Pendant Lamp (Red)", cat:"Ceiling Lighting", price:2068, dims:"12cm × 10cm × 15cm · 0.4kg", hsn:"9405" },
-  { id:"vermillion-lamp-black", name:"Vermillion Pendant Lamp (Black)", cat:"Ceiling Lighting", price:2066, dims:"12cm × 10cm × 20cm · 0.4kg", hsn:"9405" },
-  { id:"aether-pendant-lamp", name:"Aether Pendant Lamp", cat:"Ceiling Lighting", price:1699, dims:"10cm × 10cm × 15cm · 0.4kg", hsn:"9405" },
-  { id:"lumair-pendant-light", name:"Lumair Pendant Light", cat:"Ceiling Lighting", price:1494, dims:"10cm × 10cm × 15cm · 0.3kg", hsn:"9405" },
-  { id:"aurelia-pendant-light", name:"Aurelia Pendant Light", cat:"Ceiling Lighting", price:2602, dims:"38cm × 38cm × 28cm · 0.5kg", hsn:"9405" },
-  { id:"zephyra-table-lamp", name:"Zephyra Sculptural Table Lamp", cat:"Table Lamps", price:1728, dims:"10cm × 10cm × 20cm · 0.3kg", hsn:"9405" },
-  { id:"orbis-table-lamp", name:"Orbis Table Lamp", cat:"Table Lamps", price:1182, dims:"25cm × 25cm × 25cm · 0.4kg", hsn:"9405" },
-  { id:"lumen-table-lamp", name:"Lumen Cylindrical Table Lamp", cat:"Table Lamps", price:1728, dims:"10cm × 10cm × 20cm · 0.4kg", hsn:"9405" },
-  { id:"noctis-table-lamp", name:"Noctis Sculptural Table Lamp", cat:"Table Lamps", price:1355, dims:"20cm × 20cm × 20cm · 0.4kg", hsn:"9405" },
-  { id:"toru-table-lantern", name:"Toru Table Lantern", cat:"Lanterns", price:1412, dims:"8cm × 8cm × 9cm · 0.2kg", hsn:"9405" },
-  { id:"kaito-lantern", name:"Kaito Lantern", cat:"Lanterns", price:1412, dims:"10cm × 10cm × 20cm · 0.2kg", hsn:"9405" },
-  { id:"tripod-floor-lamp", name:"Tripod Floor Lamp", cat:"Floor Lamps", price:3437, dims:"20cm × 20cm × 20cm · 2kg", hsn:"9405" },
-];
+const ProductsContext = createContext({ products: [], loading: true, error: null });
+function useProducts() { return useContext(ProductsContext); }
+
 // The 6 product categories. Shop filters, the Drawer nav, the Footer
 // "Collections" column, and the homepage "Shop by Category" grid all read
 // from this array — add a category here (+ a CAT_SLUG entry + a CAT_ART
@@ -216,7 +157,13 @@ function buildPath(view,id){
 function parsePath(pathname,search=""){
   const parts=pathname.split("/").filter(Boolean);
   if(parts.length===0) return {view:"home"};
-  if(parts[0]==="product"&&parts[1]) return PRODUCTS.some(p=>p.id===parts[1])?{view:"product",productId:parts[1]}:{view:"__notfound__"};
+  // NOTE: this used to validate the product id against PRODUCTS here, but
+  // products are now fetched asynchronously (see ProductsContext in
+  // AkaraAppRoot) and won't be available yet when this runs on first page
+  // load. Existence is now validated once products finish loading — see
+  // the `productExists` check in AkaraAppRoot — so a bad product slug
+  // still correctly ends up on the 404 page, just slightly later.
+  if(parts[0]==="product"&&parts[1]) return {view:"product",productId:parts[1]};
   if(parts[0]==="shop"&&parts[1]&&SLUG_CAT[parts[1]]) return {view:"shop",shopCategory:SLUG_CAT[parts[1]]};
   if(parts[0]==="search") return {view:"search",searchQuery:sanitize(new URLSearchParams(search).get("q")||"").slice(0,100)};
   const staticView=PATH_STATIC_VIEW["/"+parts.join("/")];
@@ -273,74 +220,43 @@ function FloorLampArt({ className, style }) {
   </svg>;
 }
 
-// Maps each category to its icon component. PRODUCTS (below) uses this
-// to attach the right icon to every product based on its category.
+// Maps each category to its icon component. enrichProduct() (below) uses
+// this to attach the right icon to every product based on its category.
 const CAT_ART = { "Planters":PlanterArt, "Vases":VaseArt, "Ceiling Lighting":CeilingLampArt, "Table Lamps":TableLampArt, "Lanterns":LanternArt, "Floor Lamps":FloorLampArt };
-// ============================================================================
-// PER-PRODUCT SEO & WEBSITE COPY — the real, unique description / meta
-// title / meta description for every one of the 31 products, keyed by
-// product id. Written to replace repeated boilerplate the original
-// Flipkart-derived copy had (identical phrasing appeared verbatim across
-// 6+ different products). Merged onto each matching CATALOG product in
-// PRODUCTS below. A product with no entry here falls back to
-// "Description coming soon." rather than breaking — see tabContent in
-// ProductDetailView.
-// ============================================================================
-const SEO_COPY = {
-  "vayu-round-planter": { description: `Movement, held in place. Vayu's angled lattice sits above a grounded matte base, so the piece reads differently as you move around it — light catching the open weave one moment, settling into solid shadow the next. It's a planter built for a plant, but interesting enough to hold its own empty on a shelf. Comes with a base tray for clean, everyday styling.`, metaTitle: `Vayu Round Planter | Dual-Tone Lattice Planter — ĀKĀRA`, metaDesc: `Vayu is a dual-tone lattice planter with an angled, dynamic silhouette. 3D-printed in India, with drainage tray. Shop luxury planters at ĀKĀRA.` },
-  "sonar-round-planter-black": { description: `A planter built on restraint. Sonar's woven lattice softens into a rounded form, so the structure never feels rigid — it's there in the detail, not the outline. Foliage sits through the openwork rather than in front of it, which means the planter keeps contributing to the look even once it's full. A quiet, considered choice for a desk or console.`, metaTitle: `Sonar Round Planter | Woven Lattice Planter, Black — ĀKĀRA`, metaDesc: `Sonar is a compact woven-lattice planter in black, with a rounded silhouette and drainage tray. Handcrafted in Mumbai. Shop ĀKĀRA planters.` },
-  "sonar-round-planter-beige": { description: `The same woven geometry as Sonar's original, scaled up and warmed up. The beige finish softens the lattice further, so it reads more textile than structure from a distance — closer to a woven basket than a printed object. A larger footprint makes this the version for a proper floor plant rather than a desk succulent.`, metaTitle: `Sonar Round Planter Beige | Woven Lattice Planter — ĀKĀRA`, metaDesc: `Sonar in beige — a larger woven-lattice planter with a warm, neutral finish and drainage tray. Handcrafted in Mumbai. Shop ĀKĀRA planters.` },
-  "axiom-sculptural-planter": { description: `Two forms, deliberately layered. A fluted inner planter sits held within a sculptural outer frame, so Axiom reads as one continuous piece from a distance and two distinct gestures up close. It's the largest and most architectural planter in the range — built for a space that can give it room to be looked at, not just filled.`, metaTitle: `Axiom Sculptural Planter | Fluted Planter with Outer Frame — ĀKĀRA`, metaDesc: `Axiom pairs a fluted inner planter with a sculptural outer frame for a layered, architectural silhouette. Drainage tray included. Shop ĀKĀRA.` },
-  "kinetic-round-planter": { description: `Pattern, considered. Kinetic's lattice is cut tighter and more geometric than the rest of the range — less woven, more engineered. It's a planter that photographs as well empty as it does styled, which is why it tends to end up doing double duty: plant stand on weekdays, sculptural object when the plant's being repotted.`, metaTitle: `Kinetic Round Planter | Geometric Lattice Planter — ĀKĀRA`, metaDesc: `Kinetic is a geometric lattice planter with a matte finish and drainage tray, designed for modern indoor spaces. Shop ĀKĀRA planters online.` },
-  "echo-round-planter": { description: `Echo works through repetition. Its surface is built from a single contour, stepped and repeated until it reads as rhythm rather than pattern — the kind of detail you notice on the second look, not the first. Because the depth comes from form rather than colour, it holds up in low light as well as bright, which flat ceramic pots rarely manage.`, metaTitle: `Echo Round Planter | Layered Geometric Planter — ĀKĀRA`, metaDesc: `Echo's repeating contour pattern shifts with light and angle, adding depth to a modern indoor planter. Drainage tray included. Shop ĀKĀRA.` },
-  "eclipse-sculptural-planter": { description: `A floating sphere, without the ring. Eclipse shares its core geometry with Orbita — the same suspended spherical form and ribbed surface — but drops the stone-inspired outer ring entirely, so the sphere itself becomes the whole story. In this colourway, the effect sits quieter and more contained than Orbita's.`, metaTitle: `Eclipse Sculptural Planter | Floating Sphere Planter — ĀKĀRA`, metaDesc: `Eclipse is a floating spherical planter with a ribbed surface, sharing its core design with Orbita — without the outer stone ring. Shop ĀKĀRA planters.` },
-  "terra-sculptural-planter": { description: `Structure, wrapped in structure. Terra's woven lattice body sits on a textured sculptural base, so the piece has two distinct surfaces working at once — one open, one solid. The name suits it: there's a groundedness to the base that the upper lattice plays against. Works equally on a bookshelf or an office desk.`, metaTitle: `Terra Sculptural Planter | Woven Lattice Planter — ĀKĀRA`, metaDesc: `Terra pairs a woven lattice body with a textured sculptural base for a grounded, tactile planter. Drainage tray included. Shop ĀKĀRA planters.` },
-  "orbita-sculptural-planter": { description: `The Orbita sphere, unadorned. This is the same floating spherical planter and ribbed surface found on Eclipse, cast here in Orbita's own colourway — and, unlike its sibling Orbita Stone Ring, without the textured ring wrapped around it. Geometry alone carries the design.`, metaTitle: `Orbita Sculptural Planter | Floating Sphere Planter — ĀKĀRA`, metaDesc: `Orbita's floating spherical planter, ribbed and unadorned — no outer ring. Shares its design with Eclipse in a different colourway. Shop ĀKĀRA.` },
-  "zenith-bonsai-planter": { description: `Bonsai, elevated — literally. Zenith's stand lifts the planter just enough to create a floating impression, while the wide, low profile keeps it faithful to traditional bonsai proportions. The ribbed exterior adds shadow detail without competing with what's planted in it, which is the real test for any bonsai container.`, metaTitle: `Zenith Bonsai Planter | Elevated Bonsai Pot — ĀKĀRA`, metaDesc: `Zenith is an elevated bonsai planter with a ribbed texture and wide, traditional proportions, adapted for modern interiors. Shop ĀKĀRA.` },
-  "vetra-oval-planter": { description: `Low, linear, and deliberate. Vetra trades height for width, giving it a grounded, architectural presence that suits a cluster of small plants better than a single statement one. The ribbing is subtle — texture you feel more than see — and the wide opening keeps the arrangement even rather than lopsided.`, metaTitle: `Vetra Oval Planter | Low-Profile Ribbed Planter — ĀKĀRA`, metaDesc: `Vetra is a low, elongated planter with subtle ribbed texture, built for compact and clustered plant arrangements. Drainage tray included.` },
-  "plant-container-set": { description: `Kinetic's lattice geometry, recoloured. This is the same round, geometric lattice planter as Kinetic — same pattern, same drainage tray — just recast in a red pot on a contrasting black stand for a sharper, more graphic look. Where Kinetic reads quiet and matte, this version is built to stand out.`, metaTitle: `Plant Container Set | Red & Black Kinetic Planter — ĀKĀRA`, metaDesc: `The Kinetic lattice planter in a bold red-and-black colourway, with drainage tray. Shop ĀKĀRA's geometric indoor planters online.` },
-  "orbita-stone-ring-planter": { description: `A sphere, held by stone. Orbita's planter appears to float within a textured ring that reads closer to carved stone than printed polymer — the contrast is the whole point. The ribbed sphere itself adds a second layer of texture, so the piece keeps giving even once you've taken in the main shape.`, metaTitle: `Orbita Stone Ring Planter | Sculptural Sphere Planter — ĀKĀRA`, metaDesc: `Orbita's floating spherical form sits within a textured stone-inspired ring, with a ribbed surface and drainage system. Shop ĀKĀRA.` },
-  "helion-vase-white": { description: `A single unbroken spiral, cast in white. Helion's continuous curve catches light differently depending on where you stand — a soft shadow here, a hard edge there — which keeps it interesting even unstyled. In white, the geometry is the whole story; there's nothing else pulling focus.`, metaTitle: `Helion Vase White | Spiral Sculptural Vase — ĀKĀRA`, metaDesc: `Helion in white — a spiral-form sculptural vase that plays with light and shadow. Matte finish, indoor use. Shop ĀKĀRA decorative vases.` },
-  "helion-vase-bronze": { description: `The same spiral, stretched and warmed. Helion's bronze edition trades width for height — taller and slimmer than the original — which changes how the spiral reads, more column than curve. The warm matte tone suits it; bronze has a way of making geometry feel less severe.`, metaTitle: `Helion Vase Bronze | Tall Spiral Sculptural Vase — ĀKĀRA`, metaDesc: `Helion in bronze — a taller, slimmer take on the spiral vase, in a warm matte finish. Shop ĀKĀRA's sculptural decorative vases online.` },
-  "helion-vase-black": { description: `Helion's smallest form — the spiral geometry condensed rather than simplified. At this scale it reads more object than vase, which is why it tends to end up on a desk as often as a dining table. Black keeps the focus entirely on form.`, metaTitle: `Helion Vase Black | Compact Spiral Sculptural Vase — ĀKĀRA`, metaDesc: `Helion's smallest form, in black — a compact spiral vase for desks and small shelves. Matte finish, indoor use. Shop ĀKĀRA vases.` },
-  "aira-decorative-vase": { description: `Ribbed contours that catch the light differently every hour of the day. Aira's flowing silhouette has a quiet sense of movement to it — nothing sharp or angular, just a steady rhythm of ridges that read as calm rather than busy. Holds its own with dried botanicals or entirely empty.`, metaTitle: `Aira Decorative Vase | Ribbed Sculptural Vase — ĀKĀRA`, metaDesc: `Aira is a ribbed, flowing sculptural vase with a refined matte finish, suited to modern and Japandi interiors. Shop ĀKĀRA vases online.` },
-  "vera-fluted-vase": { description: `Fluted lines, drawn with restraint. Vera doesn't chase drama the way some of the range does — its fluting is even and continuous, closer to a classical column than a sculptural gesture. That restraint is what makes it work in more traditional settings as easily as minimalist ones.`, metaTitle: `Vera Fluted Vase | Sculptural Table Vase — ĀKĀRA`, metaDesc: `Vera's fluted contours bring timeless elegance to a modern vase, in a premium matte finish. Suited to luxury and Scandinavian interiors.` },
-  "reva-lattice-vase": { description: `A vase that stays interesting after the flowers do. Most vases disappear once arranged — Reva doesn't. Its diagonal lattice keeps revealing itself through the gaps between stems, adding a second layer to the composition rather than just holding it up. Worth choosing even for someone who mostly buys vases for what goes in them.`, metaTitle: `Reva Designer Vase | Lattice Pattern Flower Vase — ĀKĀRA`, metaDesc: `Reva's diagonal lattice pattern keeps working even after it's styled with flowers, adding depth behind every stem. Shop ĀKĀRA vases.` },
-  "vermillion-lamp-red": { description: `Rib by rib, a pendant that reads as sculpture first, light source second. Vermillion's open geometric frame lets warm light spill out through the gaps rather than straight down, softening the whole room rather than just the table beneath it. In red, it's the most visually assertive lamp in the range — built for a space that wants a focal point.`, metaTitle: `Vermillion Pendant Lamp Red | Sculptural Ceiling Light — ĀKĀRA`, metaDesc: `Vermillion's ribbed geometric structure diffuses warm light through an open frame — a bold pendant lamp in red. Shop ĀKĀRA lighting.` },
-  "vermillion-lamp-black": { description: `Same architecture, cast in black — and stretched a little taller. The extra height changes the proportions just enough to make this the more graphic of the two Vermillion editions; the ribs read as vertical lines rather than a rounded frame. Suits a more restrained interior than the red does.`, metaTitle: `Vermillion Pendant Lamp Black | Sculptural Ceiling Light — ĀKĀRA`, metaDesc: `Same architecture as Vermillion Red, cast in black and stretched taller — a graphic sculptural pendant lamp. Shop ĀKĀRA lighting.` },
-  "aether-pendant-lamp": { description: `Parametric ribs, warm light, quiet drama. Aether's flowing, computationally-derived form isn't trying to look like anything else — it's pure structure, and the shadow it casts is as much a part of the design as the lamp itself. Suspend it over a dining table or kitchen island and let the ceiling do some of the decorating.`, metaTitle: `Aether Pendant Lamp | Parametric Ceiling Light — ĀKĀRA`, metaDesc: `Aether's ribbed, parametric form creates a striking interplay of light and shadow. E27-compatible pendant lamp. Shop ĀKĀRA lighting.` },
-  "lumair-pendant-light": { description: `Light in motion. Lumair's organic geometry has none of the hard angles found elsewhere in the range — it curves and flows, and the light follows the same logic, diffusing evenly rather than spilling from one point. An everyday lamp built to shape the mood of a room rather than announce itself.`, metaTitle: `Lumair Pendant Light | Organic Sculptural Ceiling Lamp — ĀKĀRA`, metaDesc: `Lumair's organic, flowing geometry diffuses soft ambient light for a calm, considered space. Shop ĀKĀRA's sculptural ceiling lighting.` },
-  "aurelia-pendant-light": { description: `Layered light, evenly diffused. Aurelia is the largest pendant in the range, and it's built to earn that scale — multiple layers break up the light so it spreads warmly across a room instead of glaring down from one point. Above a dining table, it becomes less a light fixture and more the reason people look up.`, metaTitle: `Aurelia Pendant Light | Layered Statement Ceiling Lamp — ĀKĀRA`, metaDesc: `Aurelia's multi-layered structure diffuses light evenly for a warm, glare-free glow. The largest pendant in the ĀKĀRA range. Shop now.` },
-  "zephyra-table-lamp": { description: `A spiral shade, caught mid-swirl. Zephyra's lampshade is styled after moving air — a soft, organic spiral rather than a static cone — sitting on a fluted, minimalist base that keeps the whole piece from tipping into whimsy. The diffused glow is as much the point as the sculpture itself.`, metaTitle: `Zephyra Table Lamp | Spiral Sculptural Bedside Lamp — ĀKĀRA`, metaDesc: `Zephyra's spiral shade sits on a fluted cylindrical base for a soft, sculptural bedside glow. Shop ĀKĀRA's decorative table lamps.` },
-  "orbis-table-lamp": { description: `A sphere and a cylinder, in conversation. Orbis keeps its two forms distinct rather than blending them — a solid textured base beneath a ribbed shade — so the contrast does the design work instead of ornament. It's built to complement a room, not dominate it, which is rarer than it sounds in decorative lighting.`, metaTitle: `Orbis Table Lamp | Minimal Sphere & Cylinder Lamp — ĀKĀRA`, metaDesc: `Orbis pairs a spherical base with a ribbed cylindrical shade for a calm, structured bedside or desk lamp. Shop ĀKĀRA lighting online.` },
-  "lumen-table-lamp": { description: `Warmth, filtered through a lattice shade. Lumen's cylindrical form is deliberately plain — the interest comes entirely from how the light escapes through the openwork shade, casting a soft dappled glow across the surface it sits on. A calm, minimalist lamp that does exactly one thing well.`, metaTitle: `Lumen Table Lamp | Cylindrical Lattice Bedside Lamp — ĀKĀRA`, metaDesc: `Lumen's cylindrical lattice shade filters a soft, warm glow — a minimalist bedside lamp with E27 compatibility. Shop ĀKĀRA lighting.` },
-  "noctis-table-lamp": { description: `Dark base, pleated white shade — a study in contrast. Noctis is the most classically-styled lamp in the range, closer to vintage than sculptural, but the intricately textured base keeps it from feeling dated. Designed for an Edison-style bulb, visible rather than hidden, with a braided cord that's part of the look rather than an afterthought.`, metaTitle: `Noctis Table Lamp | Textured Base, Pleated Shade — ĀKĀRA`, metaDesc: `Noctis pairs an intricately textured dark base with a classic white pleated shade for vintage-modern bedside lighting. Shop ĀKĀRA.` },
-  "toru-table-lantern": { description: `A lantern with architectural memory. Toru's structured silhouette borrows from traditional lantern forms without copying them outright — the geometry is cleaner, more contemporary, but the sense of calm it creates is the same. Small enough for a console or bedside table, and dim enough not to fight with the room around it.`, metaTitle: `Toru Table Lantern | Japandi Bedside Lamp — ĀKĀRA`, metaDesc: `Toru is a compact Japandi-inspired table lantern with a matte textured finish and soft, diffused glow. Shop ĀKĀRA decorative lighting.` },
-  "kaito-lantern": { description: `Paneled light, borrowed from lantern tradition. Kaito's frame is built from repeated panels rather than a single shade, so the light spreads more evenly than a typical table lamp — no hot spot, just a steady, calm glow. The layered top adds just enough visual weight to keep it from disappearing into the background.`, metaTitle: `Kaito Lantern | Panelled Japandi Table Lamp — ĀKĀRA`, metaDesc: `Kaito's panelled form spreads soft, even light — a modern lantern lamp rooted in Japandi design. Shop ĀKĀRA's decorative lighting range.` },
-  "tripod-floor-lamp": { description: `The Aurelia shade, brought down to the floor. Tripod carries the same multi-layered structure that diffuses Aurelia's light evenly overhead — reduced glare, warm ambient spread — but rests it on a considered three-legged stand instead of hanging it from the ceiling. At 2kg, it's the most substantial piece in the collection, built to anchor a reading corner or fill an empty space beside a sofa without needing anything on the ceiling to support it.`, metaTitle: `Tripod Floor Lamp | Aurelia Shade on a Standing Base — ĀKĀRA`, metaDesc: `The Aurelia silhouette, brought to the floor — a multi-layered sculptural shade on a premium tripod stand. Shop ĀKĀRA's statement lighting.` },
-};
 const MIN_IMAGES=5, MIN_VIDEOS=2;
 // Generates a product's placeholder media gallery: 5 image slots + 2
 // video slots, all src:null (ProductGallery renders these as the category
-// icon / a "video coming soon" state). To add real media later: set that
-// CATALOG entry's `media` field to an array of {type,src} objects with
-// real URLs — minimum 5 images + 2 videos — overriding this default.
+// icon / a "video coming soon" state). To add real media later: update
+// that product's `media` column in the database (JSONB) to an array of
+// {type,src} objects with real URLs — minimum 5 images + 2 videos —
+// overriding this default. See enrichProduct() below for how that's read.
 function defaultMedia(){
   return [
     ...Array.from({length:MIN_IMAGES},()=>({type:"image",src:null})),
     ...Array.from({length:MIN_VIDEOS},()=>({type:"video",src:null})),
   ];
 }
-// To add real photos/videos for a product later: set that CATALOG entry's `media` field to
-// an array like [{type:"image",src:"/media/vayu-1.jpg"},...,{type:"video",src:"/media/vayu-1.mp4"}]
-// — minimum 5 images + 2 videos per product. Anything left as src:null falls back to the
-// placeholder icon/video-pending state until real files are supplied.
-// THE derived product list every component actually uses (never CATALOG
-// directly). Merges in: default stock status ("in-stock" — flip
-// individual products to "low-stock"/"sold-out" in CATALOG once real
-// inventory numbers exist), SEO_COPY fields, a media gallery (real if set
-// on the CATALOG entry, placeholder otherwise), and the category icon.
-const PRODUCTS = CATALOG.map(p => ({ stock:"in-stock", ...p, ...(SEO_COPY[p.id]||{}), media:p.media||defaultMedia(), Art: CAT_ART[p.cat] || PlanterArt }));
+// To add real photos/videos for a product later: set that product's `media`
+// field (in the database, via the future admin panel) to an array like
+// [{type:"image",src:"/media/vayu-1.jpg"},...,{type:"video",src:"/media/vayu-1.mp4"}]
+// — minimum 5 images + 2 videos per product. Anything left unset falls back
+// to the placeholder icon/video-pending state until real files are supplied.
+
+// Takes a raw product object as returned by GET /api/products (name, price,
+// description, stock, etc. — all real, from the database) and attaches the
+// two things that can only exist client-side: the category icon component
+// (Art — can't be stored in a database) and a media gallery fallback (if
+// the database has no real photos/videos yet for this product, media will
+// be an empty array — defaultMedia() fills in the placeholder gallery).
+// Called once per product every time the product list is fetched — see the
+// fetch effect in AkaraAppRoot below.
+function enrichProduct(p) {
+  return {
+    ...p,
+    media: p.media && p.media.length > 0 ? p.media : defaultMedia(),
+    Art: CAT_ART[p.cat] || PlanterArt,
+  };
+}
 
 // ============================================================================
 // SHARED UI PRIMITIVES — small reusable pieces used across dozens of pages.
@@ -408,7 +324,7 @@ function Header({ navigate, onOpenDrawer, onOpenSearch, onOpenCart, cartCount, w
     <div className="justify-self-end flex items-center gap-0.5">
       <button aria-label="Search" onClick={onOpenSearch} className="p-2.5" style={{ color:T.teal }}><Search size={17} strokeWidth={1.5}/></button>
       <button aria-label={user?"My Account":"Sign In"} onClick={()=>navigate(user?"account":"login")} className="p-2.5 hidden sm:block" style={{ color:T.teal }}><User size={17} strokeWidth={1.5}/></button>
-      <button aria-label="Wishlist" className="relative p-2.5" style={{ color:T.teal }}>
+      <button aria-label="Wishlist" onClick={()=>navigate("account","Wishlist")} className="relative p-2.5" style={{ color:T.teal }}>
         <Heart size={17} strokeWidth={1.5}/>
         {wishCount>0 && <span className="absolute top-1 right-1 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-medium text-white" style={{ backgroundColor:T.gold }}>{wishCount}</span>}
       </button>
@@ -476,11 +392,12 @@ function Drawer({ open, onClose, navigate, user, logout }) {
 // navigates to the full SearchResultsView page (/search?q=...) for
 // anything beyond the quick preview.
 function SearchPanel({ open, onClose, navigate }) {
+  const { products } = useProducts();
   const [q, setQ] = useState("");
   const inputRef = useRef(null);
   useEffect(()=>{ if(open) setTimeout(()=>inputRef.current?.focus(),300); },[open]);
   const trimmed=q.trim();
-  const allMatches = trimmed.length>1 ? PRODUCTS.filter(p=>p.name.toLowerCase().includes(q.toLowerCase())||p.cat.toLowerCase().includes(q.toLowerCase())) : [];
+  const allMatches = trimmed.length>1 ? products.filter(p=>p.name.toLowerCase().includes(q.toLowerCase())||p.cat.toLowerCase().includes(q.toLowerCase())) : [];
   const matches = allMatches.slice(0,6);
   const goToResults=()=>{ if(trimmed.length>1){ navigate("search",trimmed); onClose(); setQ(""); } };
   return <div role="search" aria-label="Search products" aria-hidden={!open} className="fixed top-[68px] left-0 right-0 z-30 overflow-hidden transition-all duration-300"
@@ -692,12 +609,13 @@ function LightWash({mx=0,my=0}) {
 // distinctive brand positioning), (6) "Explore further" — teaser cards
 // pointing to About/Care Guide/Bulk Orders so Home doesn't dead-end.
 function HomeView({ navigate, cart, setCart, wishlist, setWishlist }) {
+  const { products } = useProducts();
   const [reveal,setReveal]=useState(false);
   const [mouse,setMouse]=useState({x:0,y:0});
   const heroRef=useRef(null);
   useEffect(()=>{ const t=setTimeout(()=>setReveal(true),120); return ()=>clearTimeout(t); },[]);
   const onMove=e=>{ const r=heroRef.current.getBoundingClientRect(); setMouse({x:(e.clientX-r.left)/r.width-0.5,y:(e.clientY-r.top)/r.height-0.5}); };
-  const featured=PRODUCTS.slice(0,3);
+  const featured=products.slice(0,3);
   return <div>
     <section ref={heroRef} onMouseMove={onMove} className="relative flex flex-col items-center justify-end text-center px-6 overflow-hidden"
       style={{minHeight:"85vh",paddingBottom:"5vh"}}>
@@ -821,10 +739,11 @@ const CATEGORY_CONTENT = {
 // Deliberately NOT in sitemap.xml — query-dependent URLs shouldn't be
 // indexed as their own pages, that's standard SEO practice.
 function SearchResultsView({ navigate, cart, setCart, wishlist, setWishlist, initQuery }){
+  const { products } = useProducts();
   const [q,setQ]=useState(initQuery||"");
   useEffect(()=>{ setQ(initQuery||""); },[initQuery]);
   const trimmed=q.trim().toLowerCase();
-  const results=trimmed.length>1?PRODUCTS.filter(p=>p.name.toLowerCase().includes(trimmed)||p.cat.toLowerCase().includes(trimmed)||(p.description||"").toLowerCase().includes(trimmed)):[];
+  const results=trimmed.length>1?products.filter(p=>p.name.toLowerCase().includes(trimmed)||p.cat.toLowerCase().includes(trimmed)||(p.description||"").toLowerCase().includes(trimmed)):[];
   const submit=e=>{ e.preventDefault(); navigate("search",q); };
   return <div>
     <section className="px-6 md:px-14 pt-14 pb-8 max-w-[700px] mx-auto text-center">
@@ -863,9 +782,10 @@ function SearchResultsView({ navigate, cart, setCart, wishlist, setWishlist, ini
 // comes from the URL (set by AkaraApp's shopCategory state). Shows the
 // CATEGORY_CONTENT intro paragraph when a specific category is active.
 function ShopView({ navigate, cart, setCart, wishlist, setWishlist, initCategory }) {
+  const { products } = useProducts();
   const [activeCat,setActiveCat]=useState(initCategory||"All");
   useEffect(()=>{ if(initCategory) setActiveCat(initCategory); else setActiveCat("All"); },[initCategory]);
-  const filtered=activeCat==="All"?PRODUCTS:PRODUCTS.filter(p=>p.cat===activeCat);
+  const filtered=activeCat==="All"?products:products.filter(p=>p.cat===activeCat);
   const catInfo=CATEGORY_CONTENT[activeCat];
   return <div>
     <section className="px-6 md:px-14 pt-14 pb-8 text-center">
@@ -891,8 +811,8 @@ function ShopView({ navigate, cart, setCart, wishlist, setWishlist, initCategory
 
 // Shared (non-per-product) tab content for Product Detail's Care Guide
 // and Reviews tabs. Description is NOT here — that comes from each
-// product's own SEO_COPY entry instead (see tabContent in
-// ProductDetailView below).
+// product's own `description` field, fetched from the database (see
+// tabContent in ProductDetailView below).
 const TABS_CONTENT = {
   "Care Guide": "Wipe clean with a dry or lightly damp cloth. Avoid prolonged direct sunlight to preserve colour. Not dishwasher safe.",
   Reviews: "4.6 out of 5 · 89 reviews. Full review system coming with the backend.",
@@ -941,16 +861,17 @@ function ProductGallery({ media, Art, name, soldOut }){
 // currently placeholder Small/Medium/Large buttons, not yet wired to real
 // per-product size data — pending real size list from the business).
 function ProductDetailView({ productId, navigate, cart, setCart, wishlist, setWishlist }) {
+  const { products } = useProducts();
   // The AkaraApp render gate (productExists) already ensures this component
   // never mounts with an invalid productId, so this fallback is a pure
   // safety net, not the primary guard — see the routing fix in parsePath().
-  const product=PRODUCTS.find(p=>p.id===productId)||PRODUCTS[0];
+  const product=products.find(p=>p.id===productId)||products[0];
   const [size,setSize]=useState("Medium");
   const [qty,setQty]=useState(1);
   const [tab,setTab]=useState("Description");
   const [toast,setToast]=useState(false);
   const isWished=wishlist.includes(product.id);
-  const related=PRODUCTS.filter(p=>p.cat===product.cat&&p.id!==product.id).slice(0,3);
+  const related=products.filter(p=>p.cat===product.cat&&p.id!==product.id).slice(0,3);
   const soldOut=product.stock==="sold-out";
   const lowStock=product.stock==="low-stock";
   const addToCart=()=>{ if(soldOut) return; setCart(c=>{ const ex=c.find(i=>i.id===product.id&&i.size===size); if(ex) return c.map(i=>i.id===product.id&&i.size===size?{...i,qty:i.qty+qty}:i); return [...c,{...product,size,qty}]; }); setToast(true); setTimeout(()=>setToast(false),2200); };
@@ -1419,25 +1340,40 @@ function PaymentFailedView({ navigate }) {
 }
 
 // ============================================================================
-// AUTH PAGES — Login, Signup, Forgot/Reset Password. All client-side only:
-// there is exactly ONE working "account" (test@example.com /
-// Password1!, hardcoded below), and it is NOT real authentication. See the
-// SECURITY NOTE above the RateLimiter class — this entire flow must be
-// replaced with real server-side auth before any real customer accounts
-// are involved.
+// AUTH PAGES — Login, Signup, Forgot/Reset Password. Login and Signup now
+// call the real backend (/api/auth/login, /api/auth/signup — real
+// accounts, bcrypt-hashed passwords, httpOnly session cookies, and
+// server-side rate limiting, all verified working against a real database
+// before this was shipped). Forgot/Reset Password below are still
+// simulated — no email service is wired up yet to actually send anything.
 // ============================================================================
 function LoginView({ navigate, onLogin }) {
-  const [email,setEmail]=useState(""); const [pw,setPw]=useState(""); const [err,setErr]=useState(""); const [locked,setLocked]=useState(0);
-  useEffect(()=>{ if(locked<=0) return; const t=setInterval(()=>setLocked(s=>{ if(s<=1){clearInterval(t);return 0;} return s-1; }),1000); return ()=>clearInterval(t); },[locked]);
-  const submit=e=>{
+  const [email,setEmail]=useState(""); const [pw,setPw]=useState(""); const [err,setErr]=useState(""); const [submitting,setSubmitting]=useState(false);
+  const submit=async e=>{
     e.preventDefault();
-    const check=loginLimiter.check();
-    if(!check.allowed){setLocked(check.wait);setErr(`Too many attempts. Wait ${check.wait}s.`);return;}
     if(!validEmail(sanitize(email))){setErr("Valid email required");return;}
     if(!pw){setErr("Password required");return;}
-    loginLimiter.record();
-    if(email==="test@example.com"&&pw==="Password1!"){loginLimiter.reset();onLogin({name:"Test User",email:sanitize(email)});navigate("account");}
-    else setErr("Incorrect email or password.");
+    setSubmitting(true); setErr("");
+    try{
+      const res=await fetch("/api/auth/login",{
+        method:"POST", headers:{"Content-Type":"application/json"}, credentials:"include",
+        body:JSON.stringify({email:sanitize(email),password:pw}),
+      });
+      const data=await res.json();
+      if(!res.ok){
+        // 429 is the server-side rate limiter (see server/auth.js) —
+        // unlike the old client-side-only limiter, this one can't be
+        // bypassed by clearing browser storage. Its message is already
+        // written for display, so it's shown as-is.
+        setErr(data.error||"Something went wrong. Please try again.");
+      } else {
+        onLogin(data.customer); navigate("account");
+      }
+    }catch{
+      setErr("Couldn't reach the server. Please check your connection and try again.");
+    }finally{
+      setSubmitting(false);
+    }
   };
   return <div className="px-6 py-20 max-w-[440px] mx-auto">
     <h1 className="italic text-[32px] mb-3 text-center" style={{fontFamily:"'Fraunces',serif",color:T.teal}}>Sign In</h1>
@@ -1447,7 +1383,7 @@ function LoginView({ navigate, onLogin }) {
       <InputField label="Email" type="email" value={email} onChange={v=>{setEmail(v);setErr("");}} required/>
       <InputField label="Password" type="password" value={pw} onChange={v=>{setPw(v);setErr("");}} required/>
       <div className="flex justify-end"><button type="button" onClick={()=>navigate("forgot-password")} className="text-[12.5px] hover:underline" style={{color:T.gold}}>Forgot password?</button></div>
-      <SweepButton filled type="submit" disabled={locked>0} className="w-full">{locked>0?`Try again in ${locked}s`:"Sign In"}</SweepButton>
+      <SweepButton filled type="submit" disabled={submitting} className="w-full">{submitting?"Signing in…":"Sign In"}</SweepButton>
     </form>
   </div>;
 }
@@ -1455,11 +1391,15 @@ function LoginView({ navigate, onLogin }) {
 // Creates a fake in-memory "session" (no real account is persisted
 // anywhere) — exists so the rest of the app (My Account, Orders, etc.)
 // has something to demo against before a real backend exists.
+// Real signup — creates an actual account in the database (see
+// POST /api/auth/signup), replacing the fake in-memory-only session this
+// used to create.
 function SignupView({ navigate, onLogin }) {
   const [form,setForm]=useState({name:"",email:"",phone:"",pw:"",confirm:""}); const [errors,setErrors]=useState({});
+  const [submitting,setSubmitting]=useState(false);
   const upd=k=>v=>setForm(f=>({...f,[k]:v}));
   const strength=pwStrength(form.pw);
-  const submit=e=>{
+  const submit=async e=>{
     e.preventDefault();
     const errs={};
     if(!sanitize(form.name).trim()) errs.name="Required";
@@ -1468,11 +1408,31 @@ function SignupView({ navigate, onLogin }) {
     if(!strength.ok) errs.pw=strength.msg;
     if(form.pw!==form.confirm) errs.confirm="Passwords don't match";
     setErrors(errs); if(Object.keys(errs).length) return;
-    onLogin({name:sanitize(form.name),email:sanitize(form.email)}); navigate("account");
+    setSubmitting(true);
+    try{
+      const res=await fetch("/api/auth/signup",{
+        method:"POST", headers:{"Content-Type":"application/json"}, credentials:"include",
+        body:JSON.stringify({name:sanitize(form.name),email:sanitize(form.email),phone:form.phone,password:form.pw}),
+      });
+      const data=await res.json();
+      if(!res.ok){
+        // 409 = email already registered — the one case worth mapping to
+        // its specific field rather than a generic banner, since the
+        // fix ("sign in instead") is different from every other error here.
+        setErrors(res.status===409?{email:data.error}:{form:data.error||"Something went wrong. Please try again."});
+      } else {
+        onLogin(data.customer); navigate("account");
+      }
+    }catch{
+      setErrors({form:"Couldn't reach the server. Please check your connection and try again."});
+    }finally{
+      setSubmitting(false);
+    }
   };
   return <div className="px-6 py-20 max-w-[440px] mx-auto">
     <h1 className="italic text-[32px] mb-3 text-center" style={{fontFamily:"'Fraunces',serif",color:T.teal}}>Create Account</h1>
     <p className="text-[13.5px] text-center mb-10" style={{color:"rgba(36,62,65,0.55)"}}>Already have one? <button onClick={()=>navigate("login")} className="underline" style={{color:T.gold}}>Sign in</button></p>
+    {errors.form&&<div className="flex items-center gap-2 px-4 py-3 mb-5 text-[13px]" style={{backgroundColor:"rgba(192,57,43,0.07)",color:T.error}}><AlertCircle size={14}/>{errors.form}</div>}
     <form onSubmit={submit} noValidate className="flex flex-col gap-5">
       <InputField label="Full Name" value={form.name} onChange={upd("name")} error={errors.name} required/>
       <InputField label="Email" type="email" value={form.email} onChange={upd("email")} error={errors.email} required/>
@@ -1487,7 +1447,7 @@ function SignupView({ navigate, onLogin }) {
         </div>}
       </div>
       <InputField label="Confirm Password" type="password" value={form.confirm} onChange={upd("confirm")} error={errors.confirm} required/>
-      <SweepButton filled type="submit" className="w-full">Create Account</SweepButton>
+      <SweepButton filled type="submit" disabled={submitting} className="w-full">{submitting?"Creating account…":"Create Account"}</SweepButton>
     </form>
   </div>;
 }
@@ -1747,12 +1707,14 @@ function FAQView() {
 // session (see OrderConfirmedView's note on this same limitation), and
 // Addresses saved here exist only in this component's local state — they
 // vanish on refresh, unlike cart/wishlist which persist to localStorage.
-function MyAccountView({ navigate, wishlist, setWishlist, user, order }) {
-  const [tab,setTab]=useState("Orders");
+function MyAccountView({ navigate, wishlist, setWishlist, user, order, initTab }) {
+  const { products } = useProducts();
+  const [tab,setTab]=useState(initTab||"Orders");
+  useEffect(()=>{ if(initTab) setTab(initTab); },[initTab]);
   const [addresses,setAddresses]=useState([]);
   const [addrForm,setAddrForm]=useState({name:"",line:"",city:"",state:"",pin:"",phone:""});
   const [showAddrForm,setShowAddrForm]=useState(false);
-  const wishedProducts=PRODUCTS.filter(p=>wishlist.includes(p.id));
+  const wishedProducts=products.filter(p=>wishlist.includes(p.id));
   const addrUpd=k=>v=>setAddrForm(f=>({...f,[k]:v}));
   const saveAddress=()=>{
     if(!sanitize(addrForm.name).trim()||!sanitize(addrForm.line).trim()||!/^\d{6}$/.test(addrForm.pin)) return;
@@ -2302,21 +2264,27 @@ function safeStorageSet(key,value){
 // entry's `size` before trusting it — anything outside this list falls
 // back to "Medium" rather than being rendered as-is.
 const VALID_SIZES=["Small","Medium","Large"];
-// Reads the persisted cart from localStorage on app startup. SECURITY:
-// validates every field before trusting it — qty is clamped to a real
-// positive integer (1-99) and size is checked against VALID_SIZES, since
-// this data could be tampered with directly in browser devtools (or by a
-// future bug elsewhere) and would otherwise flow straight into price math
-// (price * qty) on the Cart/Checkout/Invoice pages unchecked. Only stores
-// {id, size, qty} — always re-merges against the live PRODUCTS list for
-// name/price/etc, so a stored cart never carries a stale price.
-function loadStoredCart(){
+// Reads the persisted cart from localStorage. SECURITY: validates every
+// field before trusting it — qty is clamped to a real positive integer
+// (1-99) and size is checked against VALID_SIZES, since this data could
+// be tampered with directly in browser devtools (or by a future bug
+// elsewhere) and would otherwise flow straight into price math (price *
+// qty) on the Cart/Checkout/Invoice pages unchecked. Only stores {id,
+// size, qty} — always re-merges against the live products list passed in,
+// so a stored cart never carries a stale price.
+//
+// Takes `products` as a parameter (rather than reading a module-level
+// constant, as it used to) because products now load asynchronously from
+// the API — this can only run correctly once they've actually arrived.
+// See the hydration effect in AkaraAppRoot, which calls this once
+// products finish loading, not on every render.
+function loadStoredCart(products){
   const stored=safeStorageGet("akara_cart");
   if(!Array.isArray(stored)) return [];
   return stored
     .map(entry=>{
       if(!entry||typeof entry.id!=="string") return null;
-      const product=PRODUCTS.find(p=>p.id===entry.id);
+      const product=products.find(p=>p.id===entry.id);
       if(!product) return null;
       const qty=Number.isInteger(entry.qty)&&entry.qty>0&&entry.qty<=99?entry.qty:1;
       const size=VALID_SIZES.includes(entry.size)?entry.size:"Medium";
@@ -2325,11 +2293,11 @@ function loadStoredCart(){
     .filter(Boolean);
 }
 // Reads the persisted wishlist from localStorage — filters out any id
-// that no longer matches a real product (e.g. a product was removed from
-// the catalog after being wishlisted).
-function loadStoredWishlist(){
+// that no longer matches a real product. Same "needs products passed in"
+// reasoning as loadStoredCart above.
+function loadStoredWishlist(products){
   const stored=safeStorageGet("akara_wishlist");
-  return Array.isArray(stored)?stored.filter(id=>PRODUCTS.some(p=>p.id===id)):[];
+  return Array.isArray(stored)?stored.filter(id=>products.some(p=>p.id===id)):[];
 }
 
 // ============================================================================
@@ -2342,14 +2310,19 @@ function loadStoredWishlist(){
 //  - view/productId/shopCategory/searchQuery/notFound: current route,
 //    synced to the real URL via buildPath/parsePath (see navigate() and
 //    the popstate effect below)
-//  - cart/wishlist: initialized from localStorage (loadStoredCart/
-//    loadStoredWishlist), re-persisted on every change (the two useEffects
-//    right below the state declarations)
-//  - user: fake in-memory session from the demo login only — see the
-//    SECURITY NOTE above RateLimiter
+//  - products/productsLoading/productsError: fetched once from
+//    GET /api/products on mount, provided to the rest of the app via
+//    ProductsContext (see useProducts()) rather than prop-drilled
+//  - cart/wishlist: start empty, then hydrated from localStorage once
+//    products finish loading (loadStoredCart/loadStoredWishlist need real
+//    product data to merge against), re-persisted on every change
+//  - user: a real session, restored on load via GET /api/auth/me (the
+//    httpOnly cookie set by /api/auth/login or /api/auth/signup) — this
+//    is what makes staying logged in survive a page refresh now
 //  - order: the single most-recent order, in-memory only, gone on refresh
 //    (this is why every post-purchase page has the same "only shows the
-//    last order" limitation noted above)
+//    last order" limitation noted above — there's no order history/orders
+//    API yet, that's still ahead)
 // The big effect below (title/meta description) is what makes every page
 // have its own real <title> and meta description — necessary for SEO now
 // that every page has its own real URL.
@@ -2359,20 +2332,71 @@ function loadStoredWishlist(){
 function AkaraAppRoot() {
   const initial=typeof window!=="undefined"?parsePath(window.location.pathname,window.location.search):{view:"home"};
   const [view,setView]=useState(initial.view==="__notfound__"?"home":initial.view);
-  const [productId,setProductId]=useState(initial.productId||PRODUCTS[0].id);
+  const [productId,setProductId]=useState(initial.productId||null);
   const [shopCategory,setShopCategory]=useState(initial.shopCategory||null);
   const [searchQuery,setSearchQuery]=useState(initial.searchQuery||"");
+  const [accountTab,setAccountTab]=useState(null);
   const [notFound,setNotFound]=useState(initial.view==="__notfound__");
   const [drawerOpen,setDrawerOpen]=useState(false);
   const [searchOpen,setSearchOpen]=useState(false);
   const [cartOpen,setCartOpen]=useState(false);
-  const [cart,setCart]=useState(loadStoredCart);
-  const [wishlist,setWishlist]=useState(loadStoredWishlist);
+  const [cart,setCart]=useState([]);
+  const [wishlist,setWishlist]=useState([]);
   const [user,setUser]=useState(null);
+  const [authChecked,setAuthChecked]=useState(false);
   const [order,setOrder]=useState(null);
+  const [products,setProducts]=useState([]);
+  const [productsLoading,setProductsLoading]=useState(true);
+  const [productsError,setProductsError]=useState(null);
+  // Guards the two persist-to-localStorage effects below so they can NEVER
+  // fire before hydration has actually read the stored cart/wishlist once.
+  // BUG THIS FIXES: without this guard, the persist-effect on `cart` fires
+  // on first mount too (React runs [cart]-dependent effects on mount, not
+  // just on change) — with cart still at its initial empty array, that
+  // write would silently overwrite the real stored cart with [] a moment
+  // before the async hydration effect below ever got a chance to read it.
+  // Caught by an actual browser test (add to cart, reload, cart was empty
+  // again) — not something a code read alone would have revealed.
+  const [hasHydrated,setHasHydrated]=useState(false);
 
-  useEffect(()=>{ safeStorageSet("akara_cart",cart.map(i=>({id:i.id,size:i.size,qty:i.qty}))); },[cart]);
-  useEffect(()=>{ safeStorageSet("akara_wishlist",wishlist); },[wishlist]);
+  // Fetches the real product catalog from the backend once, on mount.
+  // Nothing in the app renders product-dependent content until this
+  // resolves — see the loading gate near the bottom of this component.
+  useEffect(()=>{
+    fetch("/api/products")
+      .then(r=>{ if(!r.ok) throw new Error("Failed to load products ("+r.status+")"); return r.json(); })
+      .then(data=>{ setProducts(data.products.map(enrichProduct)); setProductsLoading(false); })
+      .catch(err=>{ console.error("Product fetch failed:",err); setProductsError(err); setProductsLoading(false); });
+  },[]);
+
+  // Once products have loaded (exactly once — productsLoading only ever
+  // flips true->false a single time), rehydrate cart/wishlist from
+  // localStorage against the real product data. This can't happen earlier
+  // because loadStoredCart needs real product objects (price, name, etc.)
+  // to merge the stored {id,size,qty} entries against. Only after this
+  // completes does hasHydrated flip true, unlocking the persist effects.
+  useEffect(()=>{
+    if(!productsLoading){
+      setCart(loadStoredCart(products));
+      setWishlist(loadStoredWishlist(products));
+      setHasHydrated(true);
+    }
+  },[productsLoading]);
+
+  useEffect(()=>{ if(hasHydrated) safeStorageSet("akara_cart",cart.map(i=>({id:i.id,size:i.size,qty:i.qty}))); },[cart,hasHydrated]);
+  useEffect(()=>{ if(hasHydrated) safeStorageSet("akara_wishlist",wishlist); },[wishlist,hasHydrated]);
+
+  // Checks for an existing login session (the httpOnly cookie set by
+  // /api/auth/login or /api/auth/signup) on first load — this is what
+  // makes "being logged in" survive a page refresh now, unlike the old
+  // fake in-memory-only session, which forgot you the moment you reloaded.
+  useEffect(()=>{
+    fetch("/api/auth/me",{credentials:"include"})
+      .then(r=>r.ok?r.json():null)
+      .then(data=>{ if(data?.customer) setUser(data.customer); })
+      .catch(()=>{})
+      .finally(()=>setAuthChecked(true));
+  },[]);
 
   const navigate=useCallback((v,id=null)=>{
     setNotFound(false);
@@ -2380,6 +2404,7 @@ function AkaraAppRoot() {
     if(v==="product"&&id) setProductId(id);
     if(v==="shop") setShopCategory(typeof id==="string"&&CATEGORIES.includes(id)?id:null);
     if(v==="search") setSearchQuery(typeof id==="string"?id:"");
+    if(v==="account") setAccountTab(typeof id==="string"?id:null);
     const path=buildPath(v,id);
     if(typeof window!=="undefined"&&window.location.pathname+window.location.search!==path) window.history.pushState({},"",path);
     scrollToTop();
@@ -2402,7 +2427,8 @@ function AkaraAppRoot() {
   },[]);
 
   useEffect(()=>{
-    const product=view==="product"?PRODUCTS.find(p=>p.id===productId):null;
+    if(productsLoading) return; // wait for real product data before setting product-specific meta tags
+    const product=view==="product"?products.find(p=>p.id===productId):null;
     const title=notFound?"Page Not Found — ĀKĀRA"
       :product?product.metaTitle
       :view==="home"?"ĀKĀRA — Artifacts for the Modern Spaces"
@@ -2468,7 +2494,7 @@ function AkaraAppRoot() {
       url:"https://akaraonline.co.in",
       contactPoint:{"@type":"ContactPoint",email:"support@akaraonline.co.in",contactType:"customer service"},
     });
-  },[view,productId,shopCategory,searchQuery,notFound]);
+  },[view,productId,shopCategory,searchQuery,notFound,productsLoading]);
 
   const placeOrder=useCallback((form)=>{
     const sub=cart.reduce((s,i)=>s+i.price*i.qty,0);
@@ -2478,16 +2504,44 @@ function AkaraAppRoot() {
     setCart([]); navigate("order-confirmed");
   },[cart,navigate]);
 
-  const logout=useCallback(()=>{ setUser(null); navigate("home"); },[navigate]);
+  // Calls the real /api/auth/logout endpoint (clears the httpOnly session
+  // cookie server-side) rather than just clearing local state — the old
+  // version only ever cleared local state, which didn't actually end
+  // anything since there was no real session to end.
+  const logout=useCallback(()=>{
+    fetch("/api/auth/logout",{method:"POST",credentials:"include"}).catch(()=>{});
+    setUser(null); navigate("home");
+  },[navigate]);
+
   const cartCount=cart.reduce((s,i)=>s+i.qty,0);
   // Defense-in-depth: even though parsePath() already rejects unknown product
   // slugs from a typed/shared URL, this also catches the case of navigate()
   // being called directly with a bad id (e.g. a stale reference to a removed
   // product) — either path now correctly falls through to the 404 page
-  // instead of silently showing the wrong product.
-  const productExists=view!=="product"||PRODUCTS.some(p=>p.id===productId);
+  // instead of silently showing the wrong product. While products are still
+  // loading, this deliberately does NOT flag notFound — see the loading
+  // gate below, which shows a loading state instead of a false 404 flash.
+  const productExists=productsLoading||view!=="product"||products.some(p=>p.id===productId);
 
-  return <div className="min-h-screen w-full" style={{backgroundColor:T.cream,fontFamily:"'Space Grotesk',system-ui,sans-serif",color:T.teal}}>
+  // Nothing that depends on real product data renders until it's actually
+  // loaded — avoids a flash of empty grids/undefined errors on first paint.
+  // A failed fetch (productsError) shows a real error state with a retry
+  // button rather than a silent blank page.
+  if(productsLoading||productsError){
+    return <div className="min-h-screen w-full flex flex-col items-center justify-center px-6 text-center" style={{backgroundColor:T.cream,fontFamily:"'Space Grotesk',system-ui,sans-serif"}}>
+      <style>{FONTS}</style>
+      {productsError
+        ? <>
+            <p className="italic text-[24px] mb-4" style={{fontFamily:"'Fraunces',serif",color:T.teal}}>Couldn't load the collection.</p>
+            <p className="text-[13.5px] mb-6" style={{color:"rgba(36,62,65,0.55)"}}>Something went wrong reaching the server. Please check your connection and try again.</p>
+            <SweepButton filled onClick={()=>window.location.reload()}>Retry</SweepButton>
+          </>
+        : <p className="italic text-[20px]" style={{fontFamily:"'Fraunces',serif",color:T.teal}}><Mac>A</Mac>K<Mac>A</Mac>RA</p>}
+    </div>;
+  }
+
+  return <ProductsContext.Provider value={{products,loading:productsLoading,error:productsError}}>
+  <div className="min-h-screen w-full" style={{backgroundColor:T.cream,fontFamily:"'Space Grotesk',system-ui,sans-serif",color:T.teal}}>
     <style>{FONTS}</style>
     <a href="#main-content" className="skip-link">Skip to content</a>
     <Header navigate={navigate} onOpenDrawer={()=>setDrawerOpen(true)} onOpenSearch={()=>setSearchOpen(o=>!o)} onOpenCart={()=>setCartOpen(true)} cartCount={cartCount} wishCount={wishlist.length} user={user} className="no-print"/>
@@ -2514,7 +2568,7 @@ function AkaraAppRoot() {
       {!notFound&&view==="care-guide"&&<CareGuideView navigate={navigate}/>}
       {!notFound&&view==="email-preferences"&&<EmailPreferencesView navigate={navigate}/>}
       {!notFound&&view==="accessibility"&&<AccessibilityView/>}
-      {!notFound&&view==="account"&&<MyAccountView navigate={navigate} wishlist={wishlist} setWishlist={setWishlist} user={user} order={order}/>}
+      {!notFound&&view==="account"&&<MyAccountView navigate={navigate} wishlist={wishlist} setWishlist={setWishlist} user={user} order={order} initTab={accountTab}/>}
       {!notFound&&view==="login"&&<LoginView navigate={navigate} onLogin={setUser}/>}
       {!notFound&&view==="signup"&&<SignupView navigate={navigate} onLogin={setUser}/>}
       {!notFound&&view==="forgot-password"&&<ForgotPasswordView navigate={navigate}/>}
@@ -2527,7 +2581,8 @@ function AkaraAppRoot() {
       {(notFound||!productExists||!ALL_VIEWS.includes(view))&&<NotFoundView navigate={navigate}/>}
     </main>
     <Footer navigate={navigate}/>
-  </div>;
+  </div>
+  </ProductsContext.Provider>;
 }
 
 // ============================================================================
