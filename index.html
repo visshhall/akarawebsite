@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-TBCH7JXTE9"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-TBCH7JXTE9');
+    </script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ĀKĀRA — Artifacts for the Modern Spaces</title>
+    <meta name="description" content="Luxury 3D-printed home décor — planters, vases, and lighting, handcrafted to order in Mumbai by Atelier ĀKĀRA." />
+    <!--
+      This static description/OG content is a fallback for crawlers or link
+      previews that don't execute JavaScript. AkaraApp.jsx overwrites these
+      tags dynamically per-page once React mounts (see the meta-tag effect
+      in AkaraAppRoot) — this file's job is just to have something sane
+      present before that happens.
+    -->
+    <meta property="og:title" content="ĀKĀRA — Artifacts for the Modern Spaces" />
+    <meta property="og:description" content="Luxury 3D-printed home décor — planters, vases, and lighting, handcrafted to order in Mumbai by Atelier ĀKĀRA." />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="ĀKĀRA" />
+    <!--
+      No favicon linked yet — there's no hosted icon file to point to.
+      Once a real brand icon/logo exists: drop favicon.ico (and ideally
+      apple-touch-icon.png) into /public, then add:
+      <link rel="icon" href="/favicon.ico" />
+      <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    -->
+    <!--
+      Razorpay's checkout widget script — required for the real payment
+      flow (see CheckoutView in AkaraApp.jsx). Loaded here rather than
+      dynamically injected at checkout time, so it's already warm by the
+      time a customer reaches the payment step.
+    -->
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
