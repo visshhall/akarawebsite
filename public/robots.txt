@@ -1,0 +1,15 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /cart
+Disallow: /checkout
+Disallow: /account
+Disallow: /login
+Disallow: /signup
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /order-confirmed
+Disallow: /order-status
+Disallow: /payment-failed
+
+Sitemap: https://akaraonline.co.in/sitemap.xml
