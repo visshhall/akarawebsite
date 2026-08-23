@@ -39,6 +39,7 @@ import adminDashboardRoutes from "./server/routes/admin/dashboard.js";
 import adminProductRoutes from "./server/routes/admin/products.js";
 import adminOrderRoutes from "./server/routes/admin/orders.js";
 import adminCustomerRoutes from "./server/routes/admin/customers.js";
+import adminNewsletterRoutes from "./server/routes/admin/newsletter.js";
 import adminActivityRoutes from "./server/routes/admin/activity.js";
 import adminReturnRoutes from "./server/routes/admin/returns.js";
 import adminSettingsRoutes from "./server/routes/admin/settings.js";
@@ -60,6 +61,44 @@ const PORT = process.env.PORT || 3000;
 // request with a legitimate X-Forwarded-For header still showed up as
 // 127.0.0.1; with it, the real forwarded IP and protocol are read correctly.
 app.set("trust proxy", 1);
+
+// Security headers — a real, confirmed gap: an external scan (Cloudflare
+// Radar) fingerprinted this server as Express with 100% confidence,
+// matched directly via the X-Powered-By header, and found several
+// standard protective headers absent. Cloudflare's own proxy has since
+// started adding some of these automatically (confirmed by re-checking
+// live headers directly), but that's an infrastructure-layer behavior
+// this app shouldn't depend on — if anyone ever reaches Railway's origin
+// directly, bypassing Cloudflare, none of that protection would exist
+// unless the application sets it too. CSP allows 'unsafe-inline' for
+// scripts/styles deliberately, not by oversight — this app injects fonts
+// via an inline <style> tag and Google's gtag snippet is inline in
+// index.html; tightening that further means refactoring those first.
+app.disable("x-powered-by");
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
+  res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  res.setHeader("Content-Security-Policy", [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "frame-ancestors 'self'",
+    // https: (scheme-only) rather than naming every possible host — this
+    // app's own uploads now live on Cloudflare R2 at a pub-xxxx.r2.dev
+    // URL, and images are simple <img> tags, not fetch()/XHR calls, so
+    // this is the right level of permissiveness for images specifically.
+    "img-src 'self' data: blob: https:",
+    "font-src 'self' https://fonts.gstatic.com data:",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://www.google-analytics.com https://checkout.razorpay.com",
+    "connect-src 'self' https://api.razorpay.com https://www.google-analytics.com https://api.postalpincode.in",
+    "frame-src https://api.razorpay.com https://checkout.razorpay.com",
+  ].join("; "));
+  next();
+});
 
 // The `verify` callback captures the raw, unparsed request body alongside
 // the normal parsed one — needed specifically for the Razorpay webhook,
@@ -117,6 +156,7 @@ app.use("/api/admin/dashboard", adminDashboardRoutes);
 app.use("/api/admin/products", adminProductRoutes);
 app.use("/api/admin/orders", adminOrderRoutes);
 app.use("/api/admin/customers", adminCustomerRoutes);
+app.use("/api/admin/newsletter", adminNewsletterRoutes);
 app.use("/api/admin/activity-log", adminActivityRoutes);
 app.use("/api/admin/returns", adminReturnRoutes);
 app.use("/api/admin/settings", adminSettingsRoutes);
@@ -155,7 +195,15 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 // old static file sitting in dist/ — a product added or removed via the
 // admin panel now shows up here immediately, no redeploy needed.
 app.get("/sitemap.xml", asyncHandler(async (req, res) => {
-  const { rows: products } = await query("SELECT id, updated_at FROM products");
+  // Found while writing the project documentation: this used to select
+  // every product with no status filter at all — meaning a draft or
+  // hidden product's URL could end up listed here even though the real
+  // product page (server/routes/products.js) correctly refuses to serve
+  // it. Google would be told to crawl a URL that doesn't actually
+  // resolve to anything. Same filter as that endpoint, kept consistent
+  // on purpose — a sitemap listing a page and that page actually
+  // existing publicly should never be able to disagree.
+  const { rows: products } = await query("SELECT id, updated_at FROM products WHERE status NOT IN ('draft','hidden')");
   const today = new Date().toISOString().slice(0, 10);
   const staticPages = [
     ["/", "1.0", "weekly"], ["/shop", "0.9", "weekly"],
