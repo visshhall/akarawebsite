@@ -1,0 +1,631 @@
+## Full admin panel visual review — spacing, text visibility, and functionality (5 Sep 2026)
+
+A real, systematic walkthrough of every real admin screen, with genuine, representative seeded data (multiple customers, multiple orders across every real status, multiple product categories) rather than judging empty-state screens — several apparent issues turned out to be artifacts of sparse test data, not real bugs, and are documented here too so they aren't re-investigated later.
+
+**One real, genuine bug found and fixed**: the Orders screen's price figure could visually collide with the status badges next to it whenever an order had a wider real badge combination (e.g. "COD" + "DISPATCHED" + "Mark paid"). Root cause: the row's container never allowed wrapping, forcing all of a real order's content onto one fixed line regardless of how much of it there genuinely was. Fixed by allowing the row to wrap — badges that don't fit now move to their own line instead of overlapping the price, for any future real status/badge combination, not just the ones caught in this specific review. Confirmed fixed directly against the exact real order that showed the original overlap.
+
+**Real things checked and confirmed correct, not bugs**, despite initially looking questionable:
+- **"Studio Risk 100/100 · High"** on the Dashboard — checked the actual scoring formula and the real, live data behind it: the real, live catalog genuinely has 27 products with no photo, which alone is enough to max out the score. The math is correct; the real gap is the missing product photography itself (a known, standing item, not a code issue).
+- **Empty-looking "Category Mix" and "Best Sellers" charts** — rendered correctly once tested with genuinely varied category data; a single-category test dataset produces a real, valid chart that's visually easy to mistake for broken.
+- **"Featured Products: Currently Featured (0)"** — this sandbox database has never had featured products set; checked the real, live site directly and confirmed 8 real featured products are genuinely live there. Not a real gap.
+- **Every customer showing "₹0 total spent"** — by design: the real query only counts orders with `payment_status='paid'`, deliberately excluding COD until it's actually collected. Correct as written, but worth a real, deliberate decision on whether COD should count toward customer lifetime value — flagged, not changed, since that's a real business call, not a bug fix.
+- Categories, Media Manager, Return Requests, Newsletter, Enquiries, Activity Log, Manage Accounts, and Site Content all reviewed with real data where available — no genuine issues found.
+
+**Files:** `src/AdminApp.jsx`
+
+---
+## Manual Google account linking, from account settings (5 Sep 2026)
+
+**Closes a real, standing item from the pending list** — Google Sign-In already existed and correctly *auto-linked* a matching email on first Google sign-in, but there was genuinely no way for a customer to link, unlink, or check their own real status manually. Built as a new "Google account" card in My Account → Profile, sitting between Password and the danger zone.
+
+**Real, deliberate safeguard, proven directly**: a customer can never unlink Google if doing so would leave them with no way to sign in at all — a genuine Google-only account (no password ever set) is walked through setting a password first before Unlink becomes available, and the server enforces this too, independent of the UI, so it can't be bypassed. Tested directly against three real, distinct account states (never linked; linked with a password; linked with no password) — every real transition confirmed working end to end, including the actual database state, not just the UI response.
+
+**New backend routes** (`server/routes/auth.js`): `GET /api/auth/google-status`, `POST /api/auth/google-link` (checks the Google identity isn't already claimed by a different real account, and that its email genuinely matches the account being linked), `POST /api/auth/google-unlink` (the safeguard above), `POST /api/auth/set-password` (genuinely distinct from the existing change-password route — this is real, first-time password creation for an account that has none yet, not a "change" flow).
+
+**Frontend** (`src/AkaraApp.jsx`): a new `GoogleLinkButton` component, deliberately separate from the existing sign-in page's `GoogleSignInButton` — that one's real callback signs a person in and redirects, which is wrong behavior for someone already logged in linking their account; the two share the same real Google script-loading logic but have different, correct real callbacks.
+
+**Files:** `server/routes/auth.js`, `src/AkaraApp.jsx`
+
+---
+## Real, site-wide gold-on-cream contrast fix, and clarifying "New Collection" (4 Sep 2026, later same day)
+
+**"New Collection" on the homepage is not admin-editable, by design** — it's automatically computed from each real product's actual `createdAt`, showing the 8 most recently added products. This is deliberate (stays accurate forever, zero admin upkeep) but means there's genuinely no matching screen in Site Content — reported as "can't find where to edit it," which is correct: there's nothing to edit, the section reflects the real catalog automatically.
+
+**A real, systematic, site-wide check for gold text sitting on a cream background** — reported directly as "multiple gold texts not visible on cream." Checked every real instance of `color:T.gold` across both `AkaraApp.jsx` (16 instances) and `AdminApp.jsx` (9 instances), confirming the actual real background each one sits on rather than assuming. **12 genuinely broken instances found and fixed** in `AkaraApp.jsx` (Room Stories, mood board titles, hero category label, the four process-step numbers, product page "Finish" and "Why this piece" labels, all of My Account's Profile section labels, and the return-request page's three summary cards) and **all 9 instances in `AdminApp.jsx`** (the admin login page's "Studio access" label, the dashboard's "Open orders" link, and every section label inside the product editor modal — Catalog, Basics, Media, Size/colour variants, Key features, Finish swatches, Description & SEO). All changed from `T.gold` to `T.teal`, matching this project's own established real contrast rule (teal background → gold/cream text; cream/card background → teal text only). **3 real instances in `AkaraApp.jsx` were checked and confirmed already correct** — genuinely on a teal background (the coupon banner's code button, "Made for **you**" on the dark "Made in Mumbai" section, and the stepGrid CMS block's numbered steps) — left untouched.
+
+**Files:** `src/AkaraApp.jsx`, `src/AdminApp.jsx`
+
+---
+## Real hook-order crashes, a website-wide CMS sync sweep, and removing the temporary startup migration (4 Sep 2026, later same day)
+
+**Two real React hook-order bugs found and fixed**, both a genuine violation of React's own rule that every hook must run in the same order on every render — never conditionally, never after an early return. `ReturnRequestView` and `InvoiceView` both declared real `useState` calls *after* their own `if(!user)`/`if(!order) return ...` early return. This produces exactly the real, reported symptom — "works once, then breaks" — because the hook only runs on renders where the guarded value already exists; if a page is ever mounted while that value is still resolving (e.g. a login completing while the page is already on screen), a later render with a different value hits a real hook-order mismatch and crashes into the app's error boundary. Fixed by moving both hooks above their respective early returns. **A real, automated, systematic script then checked all 64 real top-level components in `src/AkaraApp.jsx` and all 26 in `src/AdminApp.jsx` for this exact same pattern** — no further real instances found.
+
+**A real, website-wide sweep for pages showing content that wasn't actually connected to the admin panel**, following a direct report naming the FAQ and return-request pages specifically. FAQ turned out to already be correctly CMS-connected (confirmed 19 real, live questions matching what should be there) — not a real bug. The **return-request page's real policy content** (the "Quality claims only" heading, intro paragraph, and the three-card Time Limits / Evidence Required / Not Accepted summary) was genuinely, entirely hardcoded — editing it from the admin panel could never have changed anything on the live page. Every other customer-facing page was checked the same way; everything else was already correct (About, Craft, Privacy, Refunds, Shipping, Terms, Cookies, Accessibility, Care Guide, Homepage all genuinely CMS-connected; Checkout/Login/Account/Order-confirmation correctly *not* editable, since that's real functional behavior, not content).
+
+**Fix:** the return-request page's real editorial copy is now a genuine CMS page (`page_key: "return-request"`), using the same, existing `heading`/`paragraph`/`cardGrid` block types every other CMS page already uses — no new block type, no new admin UI needed. The actual, real interactive form (fields, validation, submission) is deliberately left as real functional code, untouched. Verified both directions: a real, logged-in customer sees the identical original design, now served from the database; the admin panel's Site Content screen correctly lists and can edit every real piece of it.
+
+**The temporary automatic startup migration (added ~30 Aug, documented in the entry below) has been removed** from `server.js`, now that `npm run db:sync` has been run successfully and deliberately against the live database. The app is back to its original, lean startup — no per-restart schema re-check. If a future schema change needs applying, use `npm run db:sync`/`npm run migrate` deliberately; see "Part 4 — Database" below.
+
+**Files:** `src/AkaraApp.jsx`, `server/routes/admin/page-content.js`, `server/seed-cms.js`, `server.js`
+
+---
+## Deployment recovery, real production bugs, and going-forward migration guidance (4 Sep 2026)
+
+A real, extended incident: the site went down after a deploy and stayed down through several distinct, genuinely separate causes, found and fixed one at a time by actually reproducing each locally rather than guessing. Documented here in full so the same class of issue is recognizable faster next time.
+
+**1. Railway builder misconfiguration.** The service's builder was set to **Railpack**, and `railway.json` (this project's real build/start config) had never been pointed at by Railway's **Config-as-code** setting — so it sat in the repo, correct, but completely unused. Railway fell back to serving the repo as static files (confirmed via the deploy log's own `fileserver.notFound` error, a Caddy static-file-server response, not a real app crash). **Fix:** in Railway → Settings → Config-as-code, add the file path `railway.json` explicitly, and confirm Builder is set to **Nixpacks** (the builder this project's config was written for).
+
+**2. Two genuine syntax errors, shipped in a code upload.** `src/AkaraApp.jsx` had a real statement pasted inside a function's own parameter list (`function HomeView({ const {...} = useCategories(); navigate, ... })`), and a real ternary's closing `)`/`:null` were in the wrong order. `src/AdminApp.jsx` had a stray `const` on its own line with nothing after it, immediately before the real `const FULFILLMENT_STEPS = [...]` it should have been part of. All three broke the production build outright — found by actually running `npm run build` locally and fixing whatever it reported, not by inspection.
+
+**3. A second, real runtime bug in the admin dashboard**, only visible after login: `ReferenceError: today is not defined` — a real "Today" summary strip referencing a bare `today` variable that was never declared, instead of the real data path `data.todayStrip`. React's error boundary caught it and showed a generic "Something went wrong" screen — the *page* loaded fine (real `200`), the crash was purely client-side JavaScript.
+
+**4. `db/schema.sql` had never actually been run against the live database** for everything added since the last real migration — `categories`, `push_subscriptions`, `google_id`, `finishes`, refund tracking. Confirmed directly from the live database's own error logs: `relation "categories" does not exist`. Compounded by Railway's own console (the normal way to run `npm run migrate`/`npm run db:sync` as a one-off command) being genuinely unreachable — a real WebSocket connection failure on the user's end, unrelated to this app, that no code change here can fix.
+
+**5. Worked around the unreachable console** by adding a temporary, automatic schema-sync directly into `server.js`'s own startup sequence — runs `db/schema.sql` every time the app boots, statement by statement (not as one giant batch, so one genuinely failing statement can't silently block every real statement after it), logging exactly which real statement number succeeded or failed. Two further real bugs were found and fixed in this exact migration logic before it worked correctly: a naive `;`-split was slicing apart the schema's own real `DO $$ ... END $$;` procedural blocks (which contain real, internal semicolons), and a naive "starts with `--`" comment filter was gluing multi-line SQL comments onto the front of the next real statement, corrupting it. **Removed** the same day, once Railway's console became reachable again and `npm run db:sync` was run successfully, deliberately — see the entry above this one for that removal, and "Part 4 — Database" below for the current, correct, ongoing guidance.
+
+**6. One real, separate data bug, unrelated to the above**: the dashboard's "open contact enquiries" count queried a table called `contact_messages`, which has never existed anywhere in this schema — the real, correct table (used everywhere else in the codebase) is `contact_submissions`, which also has no `status` column at all. A real `.catch()` fallback meant the dashboard never actually broke, but a genuine PostgreSQL error was logged on every single dashboard load. Fixed to query the real, correct table directly, using recency (`created_at` within 7 days) as a defensible proxy for "open," matching what the old fallback already did.
+
+**Two small, real, permanent additions from this incident:** `.nvmrc` (pins the real Node version, `>=20.0.0`, for build-environment consistency) and `railway.json` (the real, explicit build/start configuration — now actually wired up per fix #1 above).
+
+**Files:** `server.js`, `src/AkaraApp.jsx`, `src/AdminApp.jsx`, `server/routes/admin/dashboard.js`, `package.json`, `.nvmrc` (new), `railway.json` (new)
+
+---
+## Server-side SEO rendering (1 Sep 2026)
+
+Express injects per-URL **title, description, canonical, Open Graph, Twitter, JSON-LD**, and crawlable HTML inside `#root` before the SPA boots (`server/seo.js`). Dynamic **`/sitemap.xml`** already lists live products.
+
+Not full React SSR — crawlers get real meta + text; React replaces the shell on hydrate.
+
+**Railway:** no new DB tables for SEO. After deploy: `npm run migrate` only if other schema changes (e.g. push) are pending.
+
+---
+## COD in Pulse + Path C + PWA push (1 Sep 2026)
+
+1. **Dashboard revenue** includes `payment_status IN ('paid','cod')` (confirmed money). Pulse shows Online vs COD split, studio risk score, stuck >14d, missing images.
+2. **Web Push:** `web-push`, table `push_subscriptions`, routes `/api/push/*`, SW push handlers. Set `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`. Generate: `npx web-push generate-vapid-keys`. Then `npm run migrate`. Admin: Pulse → Enable push. Customer: My Account → Enable order alerts.
+3. New COD/paid orders notify admins; status changes notify that customer.
+
+**Files:** `server/routes/admin/dashboard.js`, `server/push.js`, `server/routes/push.js`, `server.js`, `server/routes/orders.js`, `server/routes/admin/orders.js`, `public/sw.js`, `src/AdminApp.jsx`, `src/AkaraApp.jsx`, `db/schema.sql`, `package.json`, `.env.example`
+
+---
+## Atelier Pulse visual upgrade (1 Sep 2026)
+
+Interactive Recharts (area, pie, bar), gradient KPI cards, insight chips, studio flow click-through, soft auto-refresh every **60 seconds**.
+
+**File:** `src/AdminApp.jsx` only (API unchanged).
+
+---
+
+## Typography — justified body (1 Sep 2026)
+
+Paragraphs use Word-style **justify** (`text-align: justify`) via `src/index.css`. Headings stay left; `.text-center` blocks (hero, trust, etc.) stay centered.
+
+---
+
+## Featured refinement (1 Sep 2026)
+
+Magazine Featured: quieter headline, gold category, price + lead-time line, dual CTAs, editorial support tiles (not full product cards).
+
+**File:** `src/AkaraApp.jsx`
+
+---
+## Fix: Admin Products crash (1 Sep 2026)
+
+Restored missing `STATUS_OPTIONS` / `STATUS_BADGE_VARIANT` (removed during Atelier Pulse edit). Without them, Admin → Products threw and the page failed to open.
+
+**File:** `src/AdminApp.jsx`
+
+---
+# ĀKĀRA Website
+
+The Atelier ĀKĀRA e-commerce site — React + Vite frontend, served by a
+small Express server with SPA routing fallback, deployed on Railway at
+www.akaraonline.co.in, DNS/CDN managed through Cloudflare.
+
+This file describes what the project actually is *right now*. Earlier
+versions of this README described specific past work passes in detail;
+that history has grown too large to usefully track here — for a full
+record of what's been built, fixed, and is still pending, see the
+separate AKARA Master Pending List.
+
+
+
+
+
+
+## Homepage layout (1 Sep 2026)
+
+- Single category entry: **Shop by Category** only (no second "Browse by category" / The Collection grid).
+- Wider content column (`max-w-[2000px]`, fuller horizontal padding) so sections are less “stuck in the middle”.
+- **How a piece is made** matches **Built differently** card language (icon box, gold step number, italic title).
+
+**File:** `src/AkaraApp.jsx`
+
+---
+
+## Google Sign-In (customer)
+
+### Where to put credentials (after you rotate the secret)
+
+| Place | What |
+|-------|------|
+| **Railway (or host) env** | `GOOGLE_CLIENT_ID=...` (required) |
+| **Railway env (optional)** | `GOOGLE_CLIENT_SECRET=...` (not required for current ID-token login) |
+| **Google Cloud Console** | OAuth client → Authorized JavaScript origins: `https://www.akaraonline.co.in`, `http://localhost:5173` |
+| **Do not** | Commit secrets into git or this zip |
+
+### After deploy
+
+1. `npm install` (adds `google-auth-library`)
+2. `npm run migrate` (adds `customers.google_id`, allows null `password_hash`)
+3. Set `GOOGLE_CLIENT_ID` on the server and restart
+4. Open `/login` — “Continue with Google” appears when config is enabled
+
+### Files
+
+- `db/schema.sql`
+- `server/googleAuth.js`
+- `server/routes/auth.js`
+- `server.js` (CSP for accounts.google.com)
+- `src/AkaraApp.jsx` (button on login + signup)
+- `package.json` (`google-auth-library`)
+- `.env.example`
+
+---
+
+## Homepage magazine Featured (31 Aug 2026)
+
+Featured section only: first admin-featured product is a large 4:5 hero + caption (name, category, short description, price, View piece). Up to 3 more featured products show as support cards below. Uses CSS **responsive grid** (`grid-cols-1` → `md:grid-cols-12`) so mobile stacks, desktop is side-by-side.
+
+**File:** `src/AkaraApp.jsx` — HomeView Featured block only.
+
+---
+
+## Customer-facing visual updates (31 Aug 2026)
+
+- **PDP gallery:** 4:5 frame + `object-cover` (no empty side bands). Full image still in lightbox.
+- **Size helper:** short italic line under Small/Medium/Large on product page.
+- **Cart drawer:** “Printed after you order · typically 2–3 weeks” under subtotal.
+- **Homepage:** more vertical spacing on major sections; softer product-card image hover (scale 1.03).
+
+**File:** `src/AkaraApp.jsx` only for these. No migrate.
+
+**Photo tip:** Prefer **1:1 or 4:5** uploads (~2000px). Cover will crop edges slightly; lightbox shows full frame.
+
+---
+
+## Recent admin updates (31 Aug 2026)
+
+### Atelier Pulse (Dashboard)
+Interactive analytics at **Admin → Dashboard**:
+- Range chips: 7d / 30d / 90d / All
+- KPIs: paid revenue, paid orders, AOV, in-production count, needs-attention, new customers
+- Revenue chart (toggle revenue vs order count)
+- Studio flow funnel (confirmed → production → QC → dispatched → delivered); click a stage for orders
+- Best sellers, category mix, quiet forms, stock/returns/payment attention lists
+
+**Files:** `server/routes/admin/dashboard.js`, `src/AdminApp.jsx`
+
+### New-order badge (WhatsApp-style)
+While the admin panel is open, the sidebar **Orders** item shows a **red count** of orders placed since you last opened Orders. Polls every 30s via `GET /api/admin/orders/new-count?since=<ms>`. Opening Orders clears the badge (stores watermark in `localStorage`).
+
+**Files:** `server/routes/admin/orders.js`, `src/AdminApp.jsx`
+
+### Grouped admin navigation
+Sidebar groups: Operate · Catalog · People · System, with gold active indicator and role badge.
+
+No database migration required for these features (`npm run migrate` unchanged).
+
+---
+
+## What's in this project
+
+```
+akara-website/
+├── src/
+│   ├── AkaraApp.jsx        the customer-facing site — every page, component, and route
+│   ├── AdminApp.jsx        the admin panel (/admin) — separate bundle, code-split
+│   ├── shared.jsx          components used by both (buttons, cards, modals, etc.)
+│   ├── main.jsx            mounts the app into the page
+│   └── index.css           Tailwind entry point
+├── server/
+│   ├── db.js                Postgres connection pool
+│   ├── auth.js               customer sessions, password hashing, login rate limiting
+│   ├── adminAuth.js           admin sessions — role-based (staff/admin/super_admin),
+│   │                           structurally separate from customer auth
+│   ├── twoFactor.js            admin 2FA — TOTP secret encryption, code verification,
+│   │                           backup code generation/hashing
+│   ├── csrf.js                 CSRF token issuing/verification
+│   ├── rateLimit.js             shared rate limiter for public forms (contact/bulk/newsletter)
+│   ├── validate.js               shared input sanitization helpers
+│   ├── email.js                   all outbound email (Resend) — every template escapes user input
+│   ├── whatsapp.js                 order-notification WhatsApp messages (Gupshup)
+│   ├── shiprocket.js                real courier booking + live tracking lookup
+│   ├── razorpay.js                   payment order creation, signature verification, refunds
+│   ├── refunds.js                     shared refund logic (customer + admin cancellation paths)
+│   ├── r2.js                           product photo/video storage (Cloudflare R2)
+│   ├── upload.js                       file validation (type/size checks, EXIF/GPS stripping)
+│   ├── photoId.js                       generates the CATEGORY-PRODUCT-##### photo ID scheme
+│   ├── settings.js                      shared settings table reads (shipping, COD, maintenance,
+│   │                                     featured coupons)
+│   ├── scheduler.js                      abandoned-checkout reminder emails, runs on an interval
+│   ├── env.js                            reads Railway's own env vars for prod-environment checks
+│   ├── migrate.js                        creates/updates all database tables (safe to re-run)
+│   ├── seed.js                            loads the product catalog into the database
+│   ├── seed-cms.js                        loads the real content for every CMS-editable page
+│   │                                      (legal pages, FAQ, Care Guide, About, Craft) — safe to
+│   │                                      re-run, skips any page that already has content
+│   ├── seed-admin.js                      creates/updates an admin account, with a role
+│   │                                      (staff/admin/super_admin) — run directly, no HTTP endpoint
+│   ├── merge-variant-products.js          ONE-TIME script that merged the old split-color
+│   │                                      products into real multi-variant products — already run;
+│   │                                      kept for reference, not meant to run again
+│   ├── migrate-uuid.js                    ONE-TIME script that converted customer IDs from integer
+│   │                                      to UUID — already run; kept for reference, refuses to
+│   │                                      run twice
+│   └── routes/
+│       ├── auth.js                 signup (with email OTP verification)/login/logout/me/account
+│       │                            deletion (customer)
+│       ├── products.js              public product list/detail, including real color/variant data
+│       ├── orders.js                 checkout (server-side variant-aware pricing — never trusts a
+│       │                              client-sent price), payment verification, cancellation,
+│       │                              order history
+│       ├── addresses.js               saved address book
+│       ├── returns.js                  return request submission
+│       ├── reviews.js                   product review submission + summary (reviews survive
+│       │                                account deletion, shown as "Verified Buyer")
+│       ├── wishlist.js                   saved-items list
+│       ├── coupons.js                     public shipping-cost/coupon-validate/featured-coupons/
+│       │                                  maintenance-status lookup
+│       ├── contact.js                      contact form
+│       ├── bulk-orders.js                   bulk/corporate order enquiry form
+│       ├── newsletter.js                     newsletter signup + preferences
+│       ├── page-content.js                    public read-only CMS content lookup, by page key
+│       ├── upload.js                          authenticated file upload endpoint
+│       ├── webhooks.js                         Razorpay payment webhook
+│       └── admin/
+│           ├── auth.js                 admin login/logout/me
+│           ├── dashboard.js             revenue/order charts, real DB queries
+│           ├── products.js               product CRUD, media validation, size/color variant
+│           │                              management (colors + priced/stocked combinations)
+│           ├── orders.js                  order status management, COD mark-paid
+│           ├── returns.js                  return request review
+│           ├── customers.js                 customer account list
+│           ├── accounts.js                   admin/staff account management — super_admin only
+│           ├── page-content.js                site-wide CMS — block-based page editor with full
+│           │                                  version history and one-click revert, super_admin
+│           │                                  only
+│           ├── enquiries.js                    unified view of Contact + Bulk Order submissions,
+│           │                                    with a handled/new marker
+│           ├── activity.js                      admin action audit log — tied to the real account
+│           │                                     that performed each action
+│           └── settings.js                       shipping cost, COD toggle/fee, maintenance mode,
+│                                                  coupon management (including public "featured"
+│                                                  visibility)
+├── db/
+│   ├── schema.sql            every table definition + every migration since, in order
+│   └── seed-products.json     the product catalog
+├── public/
+│   ├── manifest.json           PWA manifest — installable app, real brand icons/colors
+│   ├── sw.js                    minimal service worker (installability only — deliberately
+│   │                            caches nothing, so prices/stock are never served stale)
+│   ├── icon-192.png, icon-512.png, icon-512-maskable.png   real app icons generated from the
+│   │                                                        site's own brand mark
+│   ├── robots.txt
+│   ├── security.txt            RFC 9116 vulnerability-disclosure contact
+│   └── .well-known/
+│       └── security.txt         same file, the other standard location
+├── index.html                 page shell — Google tag, fonts, meta tags, favicon, PWA manifest link
+├── server.js                   production server — API routes, dynamic sitemap.xml, SPA fallback,
+│                                security headers (CSP/HSTS/etc.), apex→www redirect
+├── vite.config.js               strips HTML comments from the production build only
+├── tailwind.config.js
+├── postcss.config.js
+├── package.json
+├── .env.example                 every environment variable this app reads, documented
+└── .gitignore
+```
+
+Note: `sitemap.xml` is generated dynamically by `server.js` at request
+time (pulling real, current product IDs from the database) — it is not
+a static file in `public/`.
+
+## Part 1 — Push this to GitHub
+
+You said you already have a GitHub account, so:
+
+1. Go to [github.com/new](https://github.com/new)
+2. Repository name: `akara-website` (or whatever you like)
+3. Keep it **Private** unless you have a reason to make it public
+4. **Don't** check "Add a README" or ".gitignore" — this project already has both
+5. Click **Create repository** — GitHub will show you a page with setup commands; ignore those, use the commands below instead
+
+On your computer, open a terminal in this project folder (wherever you've
+unzipped/saved it) and run:
+
+```bash
+git init
+git add .
+git commit -m "Update — ĀKĀRA website"
+git branch -M main
+git remote add origin https://github.com/YOUR-USERNAME/akara-website.git
+git push -u origin main
+```
+
+Replace `YOUR-USERNAME` with your actual GitHub username, and
+`akara-website` with whatever you named the repo. If this repo already
+exists from a previous push, skip `git init` and `git remote add` —
+just `git add .`, `git commit`, `git push`.
+
+## Part 2 — Railway
+
+If you've already connected Railway to this GitHub repo, pushing to
+`main` triggers a new deploy automatically — no extra step needed here.
+
+If setting this up fresh: in Railway, click **GitHub Repository**,
+authorize access if asked, select this repo. Railway detects it's a
+Node project from `package.json`, runs `npm install` then `npm run
+build`, and starts it with `npm start` (which runs `server.js`).
+
+**Build configuration — genuinely required, not optional.** This
+project ships a real `railway.json` at the repo root specifying the
+correct build/start commands explicitly, but Railway does **not** read
+it automatically — a real outage happened specifically because of
+this. In the service's **Settings → Config-as-code** section, add the
+file path:
+
+```
+railway.json
+```
+
+Also confirm **Settings → Build → Builder** is set to **Nixpacks**
+(not Railpack — a newer, different builder that doesn't necessarily
+honor this project's `railway.json` the same way). If Railway ever
+falls back to serving the repo as static files instead of running the
+real Node app, this config-as-code path being unset is the first real
+thing to check — the symptom looks like a generic 404 on every route,
+with a `fileserver.notFound` error in the deploy logs (Caddy's own
+static-file-server response, not an application crash).
+
+## Part 3 — Environment variables
+
+Full list, with explanations of what each one does and where to get it,
+is in `.env.example` in this project — copy its structure into Railway's
+**Variables** tab. A few are required (the app won't start without
+them); most are optional and simply disable one feature gracefully if
+left unset (e.g. no `RESEND_API_KEY` means no emails send, but checkout
+still works).
+
+**Required:** `DATABASE_URL`, `JWT_SECRET`, `CSRF_SECRET`,
+`ADMIN_JWT_SECRET`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`,
+`RAZORPAY_WEBHOOK_SECRET`.
+
+**Optional, each enabling a real feature:** `RESEND_API_KEY` (email),
+`GUPSHUP_*` (WhatsApp order notifications), `R2_*` (permanent photo/video
+storage — see below, this matters), `SHIPROCKET_EMAIL` /
+`SHIPROCKET_PASSWORD` (real courier booking + tracking), `SITE_URL`,
+`TOTP_ENCRYPTION_KEY` (admin two-factor authentication — without it, an
+admin trying to set up 2FA gets a clear error rather than anything
+insecure, but everything else works normally; a real 32+ byte random
+value, generated the same way as the other secrets, and never changed
+once an admin has actually enabled 2FA with it).
+
+## Part 4 — Database
+
+Railway's Postgres service should already be linked as `DATABASE_URL`.
+
+**The real, current, correct command after any deploy with schema
+changes** (added since the original three-step guidance below):
+
+```bash
+npm run db:sync     # runs schema.sql migration, then refreshes FAQ + Refund CMS pages — the one command to run after a deploy
+```
+
+This is genuinely the one command to reach for day-to-day — it does
+everything `npm run migrate` does, plus keeps the FAQ/Refund CMS
+content current (see `server/db-sync.js`). Run it via Railway's
+dashboard Shell/Run Command, or the
+[Railway CLI](https://docs.railway.app/guides/cli) with `railway run`.
+
+**If you only need the original three, separate steps** (e.g. a brand
+new environment, or `db:sync`'s CMS refresh isn't wanted yet):
+
+```bash
+npm run migrate     # creates/updates every table — safe to run repeatedly, on any DB state
+npm run seed         # loads the product catalog
+npm run seed:cms      # loads the real content for every CMS-editable page
+```
+
+All of these commands are idempotent — safe to re-run if something goes
+wrong partway through; `seed:cms` specifically skips any page that
+already has content, so it never overwrites a live edit made from the
+admin panel.
+
+**If Railway's console/Shell is genuinely unreachable** (a real
+WebSocket connection failure was hit and documented in the 4 Sep 2026
+entry above — this is a Railway-side/network issue, not something in
+this codebase to fix): `server.js` currently has a **temporary,
+automatic** schema-sync built into its own startup sequence, so the
+app self-heals its database structure on every restart without needing
+console access at all. This is genuinely safe to leave running
+indefinitely, but the better long-term setup, once console access
+works again, is to run `npm run db:sync` deliberately and remove the
+automatic version from `server.js` — it does real, repeated work on
+every single restart that a healthy deployment doesn't need.
+
+There are also two genuinely **one-time** scripts already run against
+production, kept in the repo for reference — `node
+server/merge-variant-products.js` and `node server/migrate-uuid.js`.
+Neither is meant to run again; the UUID one refuses to if it detects
+it already has.
+
+## Setting up (or changing) admin accounts
+
+There's a real role system now — `staff` (order management only),
+`admin` (everything except site content and account management), and
+`super_admin` (everything, including the CMS and creating/removing
+other admin accounts). Day-to-day account creation happens in-app,
+under Manage Accounts (super_admin only) — this script is the
+bootstrap/recovery path for creating the *first* account, or fixing
+one if you're ever locked out.
+
+```bash
+node server/seed-admin.js "your-real-email@example.com" "Your Name" "YourRealPassword1!" [role]
+```
+
+`role` is optional and defaults to `super_admin` — the sensible default
+for a bootstrap/recovery script. Pass `admin` or `staff` explicitly if
+you want to create one of those instead.
+
+Requirements: a real email format, and a password of 10+ characters with
+an uppercase letter, a number, and a special character. Running this
+again with the same email updates the password (and role, if you pass a
+different one) rather than creating a duplicate account.
+
+Sign in at `https://www.akaraonline.co.in/admin`. This URL isn't linked
+anywhere on the public site.
+
+## Product photos and videos
+
+There's a real admin screen for this now — Media Manager (`/admin`,
+Media Manager in the sidebar) — with drag-to-reorder, a "set as main
+photo" action, and a real photo-ID scheme
+(`CATEGORY-PRODUCT-#####`) generated automatically. Sending files
+directly in chat, named starting with the exact product ID, still works
+as an alternative path.
+
+**Important:** without the five `R2_*` environment variables set,
+uploads silently fall back to saving on Railway's own disk, which does
+**not** persist across deploys — a photo could vanish the next time this
+app redeploys. Confirm these are set on Railway before uploading real
+product photos.
+
+## What's actually built and working
+
+This is a genuine e-commerce site, not a demo — real payments, real
+database, real everything below.
+
+**Storefront:** full product catalog with categories, search (built into
+the header, not a separate panel), product detail pages with real
+size/color variants (independently priced and stocked per combination),
+real customer reviews (not placeholder text), a wishlist, and a cart
+that persists across sessions and correctly tracks color alongside
+size. A horizontal, custom-scrolled Featured/New Collection row on the
+homepage, and a genuinely public-facing "featured coupon" banner an
+admin can turn on for one promotion at a time.
+
+**Checkout & payments:** real Razorpay integration (live mode) with
+signature-verified payment confirmation, plus Cash on Delivery as a
+genuine alternative payment method — admin-toggleable, with a
+configurable handling fee, correctly taxed. Checkout pricing is fully
+server-side and variant-aware — it resolves the real price/stock of the
+exact size+color combination from the database itself, never trusts a
+client-sent price. A payment webhook exists independently of the
+customer's own browser completing the flow, so a payment that succeeds
+even if someone's connection drops still results in a confirmed order
+and a real confirmation email/WhatsApp message.
+
+**Customer account:** signup with real email OTP verification (no
+account is created until the code is confirmed), login, saved addresses
+with PIN-code auto-fill, order history with real-time status tracking,
+self-service order cancellation (server-enforced 30-minute window),
+return requests with photo upload, downloadable PDF invoices, a real
+password-reset flow (secure tokens, single-use, expiring), and
+self-service account deletion (DPDP-compliant — orders are kept and
+anonymized for the legal 8-year retention window, reviews are kept and
+shown as "Verified Buyer", addresses/wishlist are genuinely deleted).
+
+**Admin panel** (`/admin`, structurally isolated from customer auth —
+separate database table, separate signing secret, separate session),
+with real, optional two-factor authentication (TOTP — Google
+Authenticator/Authy-compatible, no SMS) any admin can turn on for their
+own account from Settings, including QR-code setup, verify-before-enable
+(so a botched scan can't lock an account out), and single-use backup
+codes for recovery — and real role-based access with three levels:
+- **Staff** — order management only.
+- **Admin** — everything Staff has, plus Products, Media Manager,
+  Featured Products, size/color variants, Customers, Newsletter,
+  Activity Log, Returns, Enquiries, Settings.
+- **Super Admin** — everything Admin has, plus the site-wide CMS and
+  Manage Accounts (the only role that can create/remove admin
+  accounts).
+
+Also: a real dashboard with live revenue/order charts, order management
+with an enforced status lifecycle (confirmed → production → qc →
+dispatched → delivered, with cancellation allowed at any pre-delivery
+point, and one legitimate backward step — qc back to production — for
+genuine quality-check failures), a Media Manager with drag-to-reorder
+and automatic photo-ID generation, a maintenance-mode toggle, shipping
+cost and COD settings, coupon management (including which one, if any,
+is shown publicly), a unified Enquiries view (Contact + Bulk Order
+submissions together, with a handled/new marker), and an admin action
+audit log that records which real account did what.
+
+**Site-wide CMS** (Super Admin only): every legal/policy page, FAQ,
+Care Guide, About, and The Craft are editable live from the admin panel
+— no redeploy, no code — with full version history and one-click
+revert on every save.
+
+**PWA:** the site is genuinely installable (Add to Home Screen / desktop
+install) with real brand icons and colors. Deliberately no offline
+page caching — a service worker that cached prices/stock risked
+showing stale data, so it exists purely to enable installability, plus
+real push notifications (order updates for customers, new-order alerts
+for admins) — see `server/push.js` / `server/routes/push.js`.
+
+**Sign-in:** email/password with real OTP verification, plus
+**Google Sign-In** — verifies the real Google ID token server-side
+(`server/googleAuth.js`, using `google-auth-library`, not a client-
+trusted payload), and correctly links to an existing account by email
+rather than creating a duplicate if one already exists.
+
+**Refunds:** real, automatic Razorpay refunds on order cancellation
+(both customer self-cancel and admin-initiated), plus admin-issued
+**partial** refunds with cumulative tracking (`amount_refunded`,
+`partially_refunded` status) — a failed refund attempt is never
+silently lost; it's recorded and surfaced in the Activity Log, not
+just retried quietly.
+
+**Notifications:** order confirmation/status emails, WhatsApp
+notifications via Gupshup, abandoned-checkout reminder emails (sent
+automatically on a schedule, not manually).
+
+**Shipping:** real Shiprocket integration — creates an actual trackable
+shipment on dispatch (requires a pickup location to be specified first),
+and can auto-advance orders to "delivered" by checking live tracking
+status.
+
+**SEO & infrastructure:** dynamically generated sitemap (always reflects
+the real current product catalog), canonical tags on every page, proper
+security headers (CSP, HSTS, and others), rate limiting on every public
+form, a security.txt for responsible vulnerability disclosure, and DNS/
+CDN managed through Cloudflare.
+
+## What's not yet built
+
+- **About/Craft's hero copy and footer text** are not yet part of the
+  CMS pass above — everything else customer-facing is.
+- **Blog/journal section** — not started.
+- **Invoice app integration** — waiting on the exact expected file
+  format.
+- Full remaining list, including smaller items and infrastructure/
+  business decisions still needed: see the AKARA Master Pending List.
+
+## Local development
+
+```bash
+npm install
+npm run dev        # Vite dev server with hot reload
+```
+
+```bash
+npm run build       # production build → dist/
+npm start           # runs the production server locally (matches Railway)
+```
+
+
+---
+
+## Monorepo note
+
+This package is **AKARA-WEB** (`[WEB]`). Mobile app lives in sibling folder `../akara-mobile` as **AKARA-APP** (`[APP]`). See `../PROJECT_MAP.md`.
