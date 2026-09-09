@@ -11,7 +11,7 @@ import {
   X, Package, ShoppingCart, LayoutDashboard, LogOut, Pencil, Save,
   PlusCircle, Trash2, AlertCircle, AlertTriangle, Inbox, Menu, ExternalLink,
   Users, Settings, History, RotateCcw, Mail, Download,
-  Image as ImageIcon, Film, ChevronLeft, ChevronRight, Star, Upload, Copy, Shield, UserPlus, FileText, GripVertical, Layers, Search, Filter,, BarChart3 } from "lucide-react";
+  Image as ImageIcon, Film, ChevronLeft, ChevronRight, Star, Upload, Copy, Shield, UserPlus, FileText, GripVertical, Layers, Search, Filter, BarChart3 } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { T, ELEVATION, RADIUS, ICON, sanitize, apiFetch, Mac, SweepButton, InputField, useToast, Modal, Skeleton, EmptyState, Badge } from "./shared.jsx";
 
