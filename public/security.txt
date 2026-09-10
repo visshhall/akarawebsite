@@ -1,0 +1,4 @@
+Contact: mailto:support@akaraonline.co.in
+Expires: 2027-08-22T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://www.akaraonline.co.in/.well-known/security.txt
