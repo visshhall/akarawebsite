@@ -1,0 +1,132 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Body copy: full justified (Word-style), not left-ragged.
+   Headings, buttons, nav, and anything marked text-center stay as designed. */
+@layer base {
+  p {
+    text-align: justify;
+    text-justify: inter-word;
+    hyphens: auto;
+    -webkit-hyphens: auto;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    text-align: left;
+  }
+
+  button, a, label, li, span, input, textarea, select, th, td {
+    /* leave as inherited / utility-controlled — do not force justify on UI chrome */
+  }
+}
+
+/* Centered blocks (hero, trust, empty states): keep true center */
+@layer utilities {
+  .text-center {
+    text-align: center !important;
+  }
+  .text-center p,
+  .text-center h1,
+  .text-center h2,
+  .text-center h3,
+  .text-center h4,
+  .text-center span,
+  .text-center li {
+    text-align: center !important;
+  }
+
+  .text-left {
+    text-align: left !important;
+  }
+  .text-left p {
+    text-align: left !important;
+  }
+
+  /* Explicit justify helper if needed on non-p elements */
+  .text-justify {
+    text-align: justify !important;
+    text-justify: inter-word;
+  }
+}
+
+/* Google GIS button sits in an iframe — soft brand frame, no harsh white slab */
+.akara-google-btn iframe {
+  margin: 0 auto !important;
+}
+
+/* Secondary copy on cream: prefer stronger ink (site-wide readability) */
+.akara-muted { color: rgba(24, 54, 48, 0.78) !important; }
+
+/* Google button: filled_black iframe on cream frame */
+.akara-google-btn {
+  background: #183630 !important;
+  border-color: #183630 !important;
+}
+.akara-google-btn iframe {
+  margin: 0 auto !important;
+}
+
+
+/* —— ĀKĀRA micro-interactions (quiet luxury motion) —— */
+@layer utilities {
+  .akara-lift {
+    transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.35s ease, border-color 0.25s ease;
+  }
+  .akara-lift:hover {
+    transform: translateY(-3px);
+  }
+  .akara-fade-in {
+    animation: akaraFadeIn 0.55s ease-out both;
+  }
+  @keyframes akaraFadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: none; }
+  }
+  .akara-press:active {
+    transform: scale(0.98);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .akara-lift, .akara-fade-in, .akara-press {
+      transition: none !important;
+      animation: none !important;
+    }
+    .akara-lift:hover { transform: none; }
+  }
+}
+
+/* Buttons / cards: gentle feedback without noisy bounce */
+button, a, [role="button"] {
+  transition-property: color, background-color, border-color, opacity, transform, box-shadow;
+  transition-duration: 0.2s;
+  transition-timing-function: ease;
+}
+
+
+/* —— GPU-friendly motion (uses compositor when available; no effect on data) —— */
+@layer utilities {
+  /* Prefer transform/opacity over top/left for smoother motion on mobile GPUs */
+  .akara-gpu {
+    transform: translate3d(0, 0, 0);
+    backface-visibility: hidden;
+  }
+  .akara-lift {
+    transform: translate3d(0, 0, 0);
+  }
+  .akara-lift:hover {
+    transform: translate3d(0, -3px, 0);
+  }
+  /* Product grids: skip off-screen layout work when browser supports it */
+  .akara-product-grid {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 480px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .akara-gpu,
+  .akara-lift,
+  .akara-lift:hover {
+    transform: none !important;
+  }
+}
